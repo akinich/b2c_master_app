@@ -86,4 +86,81 @@ def handle_forgot_password(email: str):
         If you don't receive an email:
         1. Check your spam folder
         2. Verify the email address is correct
-        3. Contact your
+        3. Contact your administrator for assistance
+        """)
+        
+    except Exception as e:
+        error_msg = str(e)
+        
+        # Handle common errors
+        if "rate limit" in error_msg.lower():
+            st.error("Too many reset attempts. Please wait a few minutes and try again.")
+        elif "not found" in error_msg.lower():
+            st.warning("If an account exists with this email, you will receive reset instructions.")
+        else:
+            st.error("Unable to send reset email. Please contact your administrator.")
+
+
+def handle_login(email: str, password: str):
+    """
+    Handle login authentication with Supabase
+    """
+    try:
+        with st.spinner("Logging in..."):
+            # Get Supabase client
+            supabase = Database.get_client()
+            
+            # Attempt to sign in with Supabase Auth
+            response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            if response.user:
+                # Login successful, create session
+                user_dict = {
+                    'id': response.user.id,
+                    'email': response.user.email
+                }
+                
+                if SessionManager.login(user_dict):
+                    st.success("Login successful! Redirecting...")
+                    st.rerun()
+                else:
+                    st.error("Failed to load user profile. Please contact administrator.")
+            else:
+                st.error("Invalid email or password")
+                
+    except Exception as e:
+        error_message = str(e)
+        
+        # Handle specific Supabase auth errors
+        if "Invalid login credentials" in error_message:
+            st.error("Invalid email or password")
+        elif "Email not confirmed" in error_message:
+            st.error("Please verify your email address before logging in")
+        elif "User not found" in error_message:
+            st.error("No account found with this email")
+        else:
+            st.error(f"Login failed: {error_message}")
+
+
+def show_logout_button():
+    """Display logout button in sidebar"""
+    if st.sidebar.button("🚪 Logout", use_container_width=True):
+        SessionManager.logout()
+        st.rerun()
+
+
+def show_user_info():
+    """Display current user info in sidebar"""
+    profile = SessionManager.get_user_profile()
+    user = SessionManager.get_user()
+    
+    if profile and user:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 👤 User Info")
+        st.sidebar.write(f"**Name:** {profile.get('full_name', 'N/A')}")
+        st.sidebar.write(f"**Email:** {user.get('email')}")
+        st.sidebar.write(f"**Role:** {profile.get('role_name', 'N/A')}")
+        st.sidebar.markdown("---")
