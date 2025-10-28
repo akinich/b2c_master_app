@@ -22,67 +22,6 @@ def show_user_management():
         show_all_users()
     
     with tab2:
-        show_add_module_form()
-
-
-def show_all_modules():
-    """Display all modules"""
-    modules = ModuleDB.get_all_modules()
-    
-    if modules:
-        df = pd.DataFrame(modules)
-        df = df[['icon', 'module_name', 'module_key', 'description', 'is_active', 'display_order']]
-        df.columns = ['Icon', 'Name', 'Key', 'Description', 'Active', 'Order']
-        df['Active'] = df['Active'].map({True: '✅', False: '❌'})
-        
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    else:
-        st.info("No modules found")
-
-
-def show_add_module_form():
-    """Form to add new module"""
-    st.markdown("#### Add New Module")
-    st.info("After adding a module, you'll need to create the corresponding Python file in the modules/ directory")
-    
-    with st.form("add_module_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            module_name = st.text_input("Module Name *", placeholder="My New Module")
-            module_key = st.text_input("Module Key *", placeholder="my_new_module", 
-                                      help="Lowercase, underscores only. Must match Python filename.")
-        
-        with col2:
-            icon = st.text_input("Icon (Emoji)", value="⚙️")
-            display_order = st.number_input("Display Order", min_value=1, value=99)
-        
-        description = st.text_area("Description", placeholder="Describe what this module does")
-        
-        submitted = st.form_submit_button("Add Module", type="primary")
-        
-        if submitted:
-            if not module_name or not module_key:
-                st.error("Please fill in all required fields")
-            elif ' ' in module_key or not module_key.replace('_', '').isalnum():
-                st.error("Module key must be lowercase with underscores only")
-            else:
-                if ModuleDB.add_module(module_name, module_key, description, icon, display_order):
-                    st.success(f"Module '{module_name}' added successfully!")
-                    st.info(f"Next step: Create modules/{module_key}.py in your codebase")
-                    
-                    # Log admin action
-                    admin_user = SessionManager.get_user()
-                    ActivityLogger.log(
-                        user_id=admin_user['id'],
-                        action_type='admin_action',
-                        description=f"Added new module: {module_name}",
-                        metadata={'module_key': module_key}
-                    )
-                    
-                    st.rerun()
-                else:
-                    st.error("Failed to add module")
         show_add_user_form()
     
     with tab3:
@@ -444,3 +383,64 @@ def show_module_management():
         show_all_modules()
     
     with tab2:
+        show_add_module_form()
+
+
+def show_all_modules():
+    """Display all modules"""
+    modules = ModuleDB.get_all_modules()
+    
+    if modules:
+        df = pd.DataFrame(modules)
+        df = df[['icon', 'module_name', 'module_key', 'description', 'is_active', 'display_order']]
+        df.columns = ['Icon', 'Name', 'Key', 'Description', 'Active', 'Order']
+        df['Active'] = df['Active'].map({True: '✅', False: '❌'})
+        
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No modules found")
+
+
+def show_add_module_form():
+    """Form to add new module"""
+    st.markdown("#### Add New Module")
+    st.info("After adding a module, you'll need to create the corresponding Python file in the modules/ directory")
+    
+    with st.form("add_module_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            module_name = st.text_input("Module Name *", placeholder="My New Module")
+            module_key = st.text_input("Module Key *", placeholder="my_new_module", 
+                                      help="Lowercase, underscores only. Must match Python filename.")
+        
+        with col2:
+            icon = st.text_input("Icon (Emoji)", value="⚙️")
+            display_order = st.number_input("Display Order", min_value=1, value=99)
+        
+        description = st.text_area("Description", placeholder="Describe what this module does")
+        
+        submitted = st.form_submit_button("Add Module", type="primary")
+        
+        if submitted:
+            if not module_name or not module_key:
+                st.error("Please fill in all required fields")
+            elif ' ' in module_key or not module_key.replace('_', '').isalnum():
+                st.error("Module key must be lowercase with underscores only")
+            else:
+                if ModuleDB.add_module(module_name, module_key, description, icon, display_order):
+                    st.success(f"Module '{module_name}' added successfully!")
+                    st.info(f"Next step: Create modules/{module_key}.py in your codebase")
+                    
+                    # Log admin action
+                    admin_user = SessionManager.get_user()
+                    ActivityLogger.log(
+                        user_id=admin_user['id'],
+                        action_type='admin_action',
+                        description=f"Added new module: {module_name}",
+                        metadata={'module_key': module_key}
+                    )
+                    
+                    st.rerun()
+                else:
+                    st.error("Failed to add module")
