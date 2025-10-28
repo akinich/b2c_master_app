@@ -4,6 +4,8 @@ Admin panel components for user and permission management
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import secrets
+import string
 from config.database import Database, UserDB, RoleDB, ModuleDB, ActivityLogger
 from auth.session import SessionManager
 
@@ -100,7 +102,7 @@ def show_edit_user_form(user):
 def show_add_user_form():
     """Form to add new user"""
     st.markdown("#### Add New User")
-    st.info("Note: User will receive an email from Supabase to set their password.")
+    st.info("💡 User will be created with a temporary password that you must share with them securely.")
     
     roles = RoleDB.get_all_roles()
     role_options = {r['role_name']: r['id'] for r in roles}
@@ -124,36 +126,103 @@ def create_new_user(email: str, full_name: str, role_id: int):
     try:
         supabase = Database.get_client()
         
-        # Create user in Supabase Auth
-        # Note: This requires admin privileges (service_role key)
+        # Generate a strong temporary password
+        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(16))
+        
+        # Create user using Supabase Admin API
         response = supabase.auth.admin.create_user({
             "email": email,
+            "password": temp_password,
             "email_confirm": True,  # Auto-confirm email
-            "user_metadata": {"full_name": full_name}
+            "user_metadata": {
+                "full_name": full_name
+            }
         })
         
         if response.user:
-            # Create user profile
-            if UserDB.create_user_profile(response.user.id, email, full_name, role_id):
-                st.success(f"User {email} created successfully!")
+            user_id = response.user.id
+            
+            # Create user profile in our database
+            success = UserDB.create_user_profile(user_id, email, full_name, role_id)
+            
+            if success:
+                st.success(f"✅ User {email} created successfully!")
+                
+                # Display temporary password in an alert box
+                st.markdown("---")
+                st.warning("⚠️ **IMPORTANT: Share these credentials securely with the user**")
+                st.code(f"Email: {email}\nTemporary Password: {temp_password}", language="text")
+                st.info("👉 User should change this password after first login")
+                st.markdown("---")
                 
                 # Log admin action
                 admin_user = SessionManager.get_user()
                 ActivityLogger.log(
                     user_id=admin_user['id'],
                     action_type='admin_action',
-                    description=f"Created new user {email}",
+                    description=f"Created new user: {email}",
                     metadata={'new_user_email': email, 'role_id': role_id}
                 )
                 
-                st.rerun()
+                # Don't rerun immediately so user can see the password
+                # st.rerun()
             else:
-                st.error("User created but profile creation failed")
+                st.error("❌ User created in auth but failed to create profile in database")
+                st.info("You may need to manually add the profile in Supabase")
         else:
-            st.error("Failed to create user")
+            st.error("❌ Failed to create user in authentication system")
             
     except Exception as e:
-        st.error(f"Error creating user: {str(e)}")
+        error_msg = str(e)
+        st.error(f"❌ Error creating user: {error_msg}")
+        
+        # Provide detailed troubleshooting
+        with st.expander("🔧 Troubleshooting Guide"):
+            st.markdown("""
+            ### Common Issues:
+            
+            **1. "User not allowed" or "not authorized"**
+            - Check you're using `service_role_key` in Streamlit secrets (not `anon_key`)
+            - Verify in Supabase Dashboard → Settings → API
+            
+            **2. "Email rate limit exceeded"**
+            - Supabase limits email sends on free tier
+            - Wait a few minutes and try again
+            - Or create user manually in Supabase Dashboard
+            
+            **3. "Invalid email"**
+            - Check email format is correct
+            - Some email providers may be blocked
+            
+            **4. Manual Creation Method:**
+            1. Go to Supabase Dashboard → Authentication → Users
+            2. Click "Add user" 
+            3. Enter email and password
+            4. Check "Auto Confirm User"
+            5. Then add profile using SQL:
+            ```sql
+            INSERT INTO user_profiles (id, full_name, role_id, is_active)
+            VALUES ('USER-UUID-FROM-ABOVE', 'Full Name', {role_id}, TRUE);
+            ```
+            """)
+        
+        # Check if it's a permissions issue
+        if "not allowed" in error_msg.lower() or "not authorized" in error_msg.lower():
+            st.error("🔐 **Permission Issue Detected**")
+            st.markdown("""
+            This usually means the `service_role_key` is not configured correctly.
+            
+            **Quick Fix:**
+            1. Go to Supabase Dashboard → Settings → API
+            2. Copy the `service_role` key (NOT the `anon` key)
+            3. Update Streamlit Cloud Secrets:
+               ```toml
+               [supabase]
+               url = "your-url"
+               service_role_key = "paste-service-role-key-here"
+               ```
+            4. Restart the app
+            """)
 
 
 def show_user_activity():
