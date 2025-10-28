@@ -310,9 +310,9 @@ def show():
     st.markdown("---")
 
     # Credentials from st.secrets using requested names
-    api_url = st.secrets.get("api_url")
-    consumer_key = st.secrets.get("consumer_key")
-    consumer_secret = st.secrets.get("consumer_secret")
+    WC_API_URL = st.secrets["woocommerce"]["api_url"]
+    WC_CONSUMER_KEY = st.secrets["woocommerce"]["consumer_key"]
+    WC_CONSUMER_SECRET = st.secrets["woocommerce"]["consumer_secret"]
 
     if not api_url or not consumer_key or not consumer_secret:
         missing = [k for k, v in {
