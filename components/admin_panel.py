@@ -97,6 +97,75 @@ def show_edit_user_form(user):
                 st.rerun()
             else:
                 st.error("Failed to update user")
+    
+    # Password Reset Section
+    st.markdown("---")
+    st.markdown("#### 🔐 Reset Password")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.info("Generate a new temporary password for this user")
+    
+    with col2:
+        if st.button("Reset Password", key=f"reset_pwd_{user['id']}", type="secondary", use_container_width=True):
+            reset_user_password(user['id'], user['email'])
+
+
+def reset_user_password(user_id: str, user_email: str):
+    """Reset user password and generate new temporary password"""
+    try:
+        supabase = Database.get_client()
+        
+        # Generate new temporary password
+        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(16))
+        
+        # Update user password using admin API
+        response = supabase.auth.admin.update_user_by_id(
+            user_id,
+            {"password": temp_password}
+        )
+        
+        if response.user:
+            st.success(f"✅ Password reset successfully for {user_email}")
+            
+            # Display new password
+            st.markdown("---")
+            st.warning("⚠️ **IMPORTANT: Share this new password securely with the user**")
+            st.code(f"Email: {user_email}\nNew Temporary Password: {temp_password}", language="text")
+            st.info("👉 User should change this password after logging in")
+            st.markdown("---")
+            
+            # Log admin action
+            admin_user = SessionManager.get_user()
+            ActivityLogger.log(
+                user_id=admin_user['id'],
+                action_type='admin_action',
+                description=f"Reset password for user {user_email}",
+                metadata={'target_user_email': user_email}
+            )
+        else:
+            st.error("Failed to reset password")
+            
+    except Exception as e:
+        st.error(f"Error resetting password: {str(e)}")
+        
+        with st.expander("🔧 Troubleshooting"):
+            st.markdown("""
+            ### Common Issues:
+            
+            **1. "User not found"**
+            - Verify the user exists in Supabase Authentication
+            
+            **2. "Not authorized"**
+            - Check you're using `service_role_key` in Streamlit secrets
+            
+            **3. Manual Password Reset:**
+            1. Go to Supabase Dashboard → Authentication → Users
+            2. Find the user
+            3. Click the three dots menu → "Reset Password"
+            4. Copy the reset link or set new password directly
+            """)
 
 
 def show_add_user_form():
@@ -165,7 +234,6 @@ def create_new_user(email: str, full_name: str, role_id: int):
                 )
                 
                 # Don't rerun immediately so user can see the password
-                # st.rerun()
             else:
                 st.error("❌ User created in auth but failed to create profile in database")
                 st.info("You may need to manually add the profile in Supabase")
@@ -199,11 +267,7 @@ def create_new_user(email: str, full_name: str, role_id: int):
             2. Click "Add user" 
             3. Enter email and password
             4. Check "Auto Confirm User"
-            5. Then add profile using SQL:
-            ```sql
-            INSERT INTO user_profiles (id, full_name, role_id, is_active)
-            VALUES ('USER-UUID-FROM-ABOVE', 'Full Name', {role_id}, TRUE);
-            ```
+            5. Then add profile using SQL Editor
             """)
         
         # Check if it's a permissions issue
@@ -215,12 +279,7 @@ def create_new_user(email: str, full_name: str, role_id: int):
             **Quick Fix:**
             1. Go to Supabase Dashboard → Settings → API
             2. Copy the `service_role` key (NOT the `anon` key)
-            3. Update Streamlit Cloud Secrets:
-               ```toml
-               [supabase]
-               url = "your-url"
-               service_role_key = "paste-service-role-key-here"
-               ```
+            3. Update Streamlit Cloud Secrets
             4. Restart the app
             """)
 
@@ -418,6 +477,11 @@ def show_module_activity_logs():
     st.markdown("#### Module-Specific Activity")
     
     modules = ModuleDB.get_all_modules()
+    
+    if not modules:
+        st.info("No modules found")
+        return
+    
     module_options = {f"{m.get('icon', '⚙️')} {m['module_name']}": m['module_key'] for m in modules}
     
     selected_module_display = st.selectbox("Select Module", options=list(module_options.keys()))
