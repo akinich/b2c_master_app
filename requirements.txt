@@ -13,11 +13,16 @@ psycopg2-binary>=2.9.9
 pandas>=2.0.0
 python-dateutil>=2.8.2
 
-# For your mini apps - add/remove based on your needs
-reportlab>=4.0.0  # PDF generation
-PyPDF2>=3.0.0  # PDF manipulation
-requests>=2.31.0  # API calls
-openpyxl>=3.1.0  # Excel operations
+# Excel operations
+xlsxwriter>=3.1.0
+openpyxl>=3.1.0
+
+# API calls
+requests>=2.31.0
+
+# PDF operations (for future modules)
+reportlab>=4.0.0
+PyPDF2>=3.0.0
 
 # Optional but recommended
-streamlit-extras>=0.3.0  # Additional Streamlit components
+streamlit-extras>=0.3.0
