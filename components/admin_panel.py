@@ -18,7 +18,7 @@ def show_user_management():
     st.markdown("---")
     
     # Tabs for different user management functions
-    tab1, tab2, tab3 = st.tabs(["All Users", "Add New User", "User Activity"])
+    tab1, tab2, tab3, tab4 = st.tabs(["All Users", "Add New User", "User Activity", "Manual Add Instructions"])
     
     with tab1:
         show_all_users()
@@ -28,6 +28,9 @@ def show_user_management():
     
     with tab3:
         show_user_activity()
+    
+    with tab4:
+        show_manual_user_creation()
 
 
 def show_all_users():
@@ -37,11 +40,12 @@ def show_all_users():
     if users:
         # Convert to DataFrame for better display
         df = pd.DataFrame(users)
-        df = df[['email', 'full_name', 'role_name', 'is_active', 'created_at']]
-        df.columns = ['Email', 'Full Name', 'Role', 'Active', 'Created At']
-        df['Created At'] = pd.to_datetime(df['Created At']).dt.strftime('%Y-%m-%d %H:%M')
+        display_cols = ['email', 'full_name', 'role_name', 'is_active', 'created_at']
+        df_display = df[display_cols].copy()
+        df_display.columns = ['Email', 'Full Name', 'Role', 'Active', 'Created At']
+        df_display['Created At'] = pd.to_datetime(df_display['Created At']).dt.strftime('%Y-%m-%d %H:%M')
         
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
         
         st.markdown("---")
         st.markdown("#### Edit User")
@@ -60,22 +64,36 @@ def show_all_users():
 def show_edit_user_form(user):
     """Form to edit user details"""
     roles = RoleDB.get_all_roles()
+    if not roles:
+        st.error("No roles found in system")
+        return
+    
     role_options = {r['role_name']: r['id'] for r in roles}
     
     col1, col2 = st.columns(2)
     
     with col1:
-        new_name = st.text_input("Full Name", value=user.get('full_name', ''))
+        new_name = st.text_input("Full Name", value=user.get('full_name', ''), key=f"name_{user['id']}")
+        
+        # Get current role index safely
+        current_role = user.get('role_name', 'User')
+        role_names = list(role_options.keys())
+        try:
+            current_role_idx = role_names.index(current_role)
+        except ValueError:
+            current_role_idx = 0
+        
         new_role = st.selectbox(
             "Role",
-            options=list(role_options.keys()),
-            index=list(role_options.keys()).index(user['role_name'])
+            options=role_names,
+            index=current_role_idx,
+            key=f"role_{user['id']}"
         )
     
     with col2:
-        is_active = st.checkbox("Active", value=user['is_active'])
+        is_active = st.checkbox("Active", value=user.get('is_active', True), key=f"active_{user['id']}")
         
-        if st.button("Update User", type="primary"):
+        if st.button("💾 Update User", type="primary", key=f"update_{user['id']}"):
             updates = {
                 'full_name': new_name,
                 'role_id': role_options[new_role],
@@ -83,24 +101,26 @@ def show_edit_user_form(user):
             }
             
             if UserDB.update_user_profile(user['id'], updates):
-                st.success(f"User {user['email']} updated successfully!")
+                st.success(f"✅ User {user['email']} updated successfully!")
                 
                 # Log admin action
                 admin_user = SessionManager.get_user()
                 ActivityLogger.log(
                     user_id=admin_user['id'],
                     action_type='admin_action',
-                    description=f"Updated user {user['email']}",
+                    description=f"Updated user {user['email']} - Role: {new_role}, Active: {is_active}",
                     metadata={'target_user': user['email'], 'updates': updates}
                 )
                 
+                # Force cache clear and rerun
+                st.cache_data.clear()
                 st.rerun()
             else:
-                st.error("Failed to update user")
+                st.error("❌ Failed to update user")
     
     # Password Reset Section
     st.markdown("---")
-    st.markdown("#### 🔐 Reset Password")
+    st.markdown("#### 🔐 Password Reset")
     
     col1, col2 = st.columns([2, 1])
     
@@ -108,8 +128,68 @@ def show_edit_user_form(user):
         st.info("Generate a new temporary password for this user")
     
     with col2:
-        if st.button("Reset Password", key=f"reset_pwd_{user['id']}", type="secondary", use_container_width=True):
+        if st.button("🔄 Reset Password", key=f"reset_pwd_{user['id']}", type="secondary", use_container_width=True):
             reset_user_password(user['id'], user['email'])
+    
+    # Delete User Section
+    st.markdown("---")
+    st.markdown("#### 🗑️ Delete User")
+    
+    st.warning("⚠️ **Danger Zone**: This action cannot be undone")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.write("Permanently delete this user from the system")
+    
+    with col2:
+        if st.button("🗑️ Delete User", key=f"delete_{user['id']}", type="secondary", use_container_width=True):
+            # Show confirmation
+            st.session_state[f'confirm_delete_{user["id"]}'] = True
+    
+    # Confirmation for delete
+    if st.session_state.get(f'confirm_delete_{user["id"]}', False):
+        st.error(f"⚠️ Are you sure you want to delete {user['email']}?")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            if st.button("✅ Yes, Delete", key=f"confirm_yes_{user['id']}", type="primary"):
+                delete_user(user['id'], user['email'])
+                st.session_state[f'confirm_delete_{user["id"]}'] = False
+        
+        with col2:
+            if st.button("❌ Cancel", key=f"confirm_no_{user['id']}"):
+                st.session_state[f'confirm_delete_{user["id"]}'] = False
+                st.rerun()
+
+
+def delete_user(user_id: str, user_email: str):
+    """Delete user from system"""
+    try:
+        supabase = Database.get_client()
+        
+        # First, delete user profile
+        supabase.table('user_profiles').delete().eq('id', user_id).execute()
+        
+        # Then delete from auth (this will cascade)
+        response = supabase.auth.admin.delete_user(user_id)
+        
+        st.success(f"✅ User {user_email} deleted successfully!")
+        
+        # Log admin action
+        admin_user = SessionManager.get_user()
+        ActivityLogger.log(
+            user_id=admin_user['id'],
+            action_type='admin_action',
+            description=f"Deleted user {user_email}",
+            metadata={'deleted_user_email': user_email}
+        )
+        
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"❌ Error deleting user: {str(e)}")
+        st.info("Try manually deleting in Supabase Dashboard → Authentication → Users")
 
 
 def reset_user_password(user_id: str, user_email: str):
@@ -118,7 +198,7 @@ def reset_user_password(user_id: str, user_email: str):
         supabase = Database.get_client()
         
         # Generate new temporary password
-        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(16))
+        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
         
         # Update user password using admin API
         response = supabase.auth.admin.update_user_by_id(
@@ -132,7 +212,7 @@ def reset_user_password(user_id: str, user_email: str):
             # Display new password
             st.markdown("---")
             st.warning("⚠️ **IMPORTANT: Share this new password securely with the user**")
-            st.code(f"Email: {user_email}\nNew Temporary Password: {temp_password}", language="text")
+            st.code(f"Email: {user_email}\nNew Password: {temp_password}", language="text")
             st.info("👉 User should change this password after logging in")
             st.markdown("---")
             
@@ -145,35 +225,33 @@ def reset_user_password(user_id: str, user_email: str):
                 metadata={'target_user_email': user_email}
             )
         else:
-            st.error("Failed to reset password")
+            st.error("❌ Failed to reset password")
             
     except Exception as e:
-        st.error(f"Error resetting password: {str(e)}")
+        error_msg = str(e)
+        st.error(f"❌ Error: {error_msg}")
         
-        with st.expander("🔧 Troubleshooting"):
+        if "not allowed" in error_msg.lower():
+            st.warning("🔧 **Manual Reset Method:**")
             st.markdown("""
-            ### Common Issues:
-            
-            **1. "User not found"**
-            - Verify the user exists in Supabase Authentication
-            
-            **2. "Not authorized"**
-            - Check you're using `service_role_key` in Streamlit secrets
-            
-            **3. Manual Password Reset:**
             1. Go to Supabase Dashboard → Authentication → Users
-            2. Find the user
-            3. Click the three dots menu → "Reset Password"
-            4. Copy the reset link or set new password directly
-            """)
+            2. Find user: `{}`
+            3. Click ⋮ menu → "Send password recovery"
+            """.format(user_email))
 
 
 def show_add_user_form():
     """Form to add new user"""
     st.markdown("#### Add New User")
-    st.info("💡 User will be created with a temporary password that you must share with them securely.")
+    
+    # Check rate limit info
+    st.info("💡 If you get 'User not allowed' error, use the 'Manual Add Instructions' tab or wait a few minutes and try again.")
     
     roles = RoleDB.get_all_roles()
+    if not roles:
+        st.error("No roles found")
+        return
+        
     role_options = {r['role_name']: r['id'] for r in roles}
     
     with st.form("add_user_form"):
@@ -181,7 +259,7 @@ def show_add_user_form():
         full_name = st.text_input("Full Name *", placeholder="John Doe")
         role = st.selectbox("Role *", options=list(role_options.keys()))
         
-        submitted = st.form_submit_button("Create User", type="primary")
+        submitted = st.form_submit_button("➕ Create User", type="primary")
         
         if submitted:
             if not email or not full_name:
@@ -196,13 +274,13 @@ def create_new_user(email: str, full_name: str, role_id: int):
         supabase = Database.get_client()
         
         # Generate a strong temporary password
-        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(16))
+        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
         
         # Create user using Supabase Admin API
         response = supabase.auth.admin.create_user({
             "email": email,
             "password": temp_password,
-            "email_confirm": True,  # Auto-confirm email
+            "email_confirm": True,
             "user_metadata": {
                 "full_name": full_name
             }
@@ -217,10 +295,10 @@ def create_new_user(email: str, full_name: str, role_id: int):
             if success:
                 st.success(f"✅ User {email} created successfully!")
                 
-                # Display temporary password in an alert box
+                # Display temporary password
                 st.markdown("---")
-                st.warning("⚠️ **IMPORTANT: Share these credentials securely with the user**")
-                st.code(f"Email: {email}\nTemporary Password: {temp_password}", language="text")
+                st.warning("⚠️ **IMPORTANT: Share these credentials securely**")
+                st.code(f"Email: {email}\nPassword: {temp_password}", language="text")
                 st.info("👉 User should change this password after first login")
                 st.markdown("---")
                 
@@ -232,56 +310,77 @@ def create_new_user(email: str, full_name: str, role_id: int):
                     description=f"Created new user: {email}",
                     metadata={'new_user_email': email, 'role_id': role_id}
                 )
-                
-                # Don't rerun immediately so user can see the password
             else:
-                st.error("❌ User created in auth but failed to create profile in database")
-                st.info("You may need to manually add the profile in Supabase")
+                st.error("❌ User created in auth but profile creation failed")
         else:
-            st.error("❌ Failed to create user in authentication system")
+            st.error("❌ Failed to create user")
             
     except Exception as e:
         error_msg = str(e)
-        st.error(f"❌ Error creating user: {error_msg}")
+        st.error(f"❌ Error: {error_msg}")
         
-        # Provide detailed troubleshooting
-        with st.expander("🔧 Troubleshooting Guide"):
-            st.markdown("""
-            ### Common Issues:
-            
-            **1. "User not allowed" or "not authorized"**
-            - Check you're using `service_role_key` in Streamlit secrets (not `anon_key`)
-            - Verify in Supabase Dashboard → Settings → API
-            
-            **2. "Email rate limit exceeded"**
-            - Supabase limits email sends on free tier
-            - Wait a few minutes and try again
-            - Or create user manually in Supabase Dashboard
-            
-            **3. "Invalid email"**
-            - Check email format is correct
-            - Some email providers may be blocked
-            
-            **4. Manual Creation Method:**
-            1. Go to Supabase Dashboard → Authentication → Users
-            2. Click "Add user" 
-            3. Enter email and password
-            4. Check "Auto Confirm User"
-            5. Then add profile using SQL Editor
-            """)
-        
-        # Check if it's a permissions issue
-        if "not allowed" in error_msg.lower() or "not authorized" in error_msg.lower():
-            st.error("🔐 **Permission Issue Detected**")
-            st.markdown("""
-            This usually means the `service_role_key` is not configured correctly.
-            
-            **Quick Fix:**
-            1. Go to Supabase Dashboard → Settings → API
-            2. Copy the `service_role` key (NOT the `anon` key)
-            3. Update Streamlit Cloud Secrets
-            4. Restart the app
-            """)
+        if "not allowed" in error_msg.lower() or "rate limit" in error_msg.lower():
+            st.warning("⚠️ **Rate Limit or Permission Issue**")
+            st.info("Please use the 'Manual Add Instructions' tab to create users manually")
+
+
+def show_manual_user_creation():
+    """Instructions for manually creating users"""
+    st.markdown("#### 📋 Manual User Creation (Recommended for Multiple Users)")
+    
+    st.markdown("""
+    If you're having issues with automatic user creation, follow these steps:
+    
+    ### Step 1: Create User in Supabase
+    1. Go to **Supabase Dashboard** → **Authentication** → **Users**
+    2. Click **"Add user"** button
+    3. Fill in:
+       - **Email:** User's email
+       - **Password:** Create a password
+       - **Auto Confirm User:** ✅ **Check this box**
+    4. Click **"Create user"**
+    5. **Copy the User UUID** from the users list
+    
+    ### Step 2: Add User Profile
+    1. Go to **SQL Editor** in Supabase
+    2. Click **"New Query"**
+    3. Paste the SQL below and fill in the details:
+    """)
+    
+    # Show roles for reference
+    roles = RoleDB.get_all_roles()
+    if roles:
+        st.markdown("**Available Roles:**")
+        role_info = {r['role_name']: r['id'] for r in roles}
+        for role_name, role_id in role_info.items():
+            st.code(f"{role_name} (ID: {role_id})")
+    
+    st.markdown("### SQL Template:")
+    
+    sql_template = """-- Replace the values below:
+-- USER-UUID: The UUID you copied from step 1
+-- Full Name: User's full name
+-- ROLE-ID: Use the role ID from above (1=Admin, 2=Manager, 3=User)
+
+INSERT INTO user_profiles (id, full_name, role_id, is_active)
+VALUES (
+    'USER-UUID-HERE',  -- Replace with UUID
+    'User Full Name',   -- Replace with name
+    3,                  -- Replace with role ID (1, 2, or 3)
+    TRUE
+);"""
+    
+    st.code(sql_template, language="sql")
+    
+    st.markdown("""
+    ### Step 3: Verify
+    1. Refresh this page
+    2. Go to "All Users" tab
+    3. The new user should appear
+    4. Share the email and password with the user
+    """)
+    
+    st.success("💡 This method bypasses API rate limits and is more reliable!")
 
 
 def show_user_activity():
