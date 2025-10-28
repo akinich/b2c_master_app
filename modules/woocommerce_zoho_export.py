@@ -301,7 +301,7 @@ def show():
     """
     Streamlit entry point for the module.
     """
-    SessionManager.require_module_access('module_key_here')
+    SessionManager.require_module_access('woocommerce_zoho_export')
     user = SessionManager.get_user()
     profile = SessionManager.get_user_profile()
 
