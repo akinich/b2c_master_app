@@ -1,0 +1,23 @@
+# Core dependencies
+streamlit>=1.28.0
+supabase>=2.0.0
+python-dotenv>=1.0.0
+
+# Authentication & Security
+bcrypt>=4.0.1
+
+# Database
+psycopg2-binary>=2.9.9
+
+# Utilities
+pandas>=2.0.0
+python-dateutil>=2.8.2
+
+# For your mini apps - add/remove based on your needs
+reportlab>=4.0.0  # PDF generation
+PyPDF2>=3.0.0  # PDF manipulation
+requests>=2.31.0  # API calls
+openpyxl>=3.1.0  # Excel operations
+
+# Optional but recommended
+streamlit-extras>=0.3.0  # Additional Streamlit components
