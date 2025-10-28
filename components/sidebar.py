@@ -91,4 +91,16 @@ def show_module_breadcrumb():
         # Check if it's an admin module
         admin_modules = {
             'admin_users': ('👥', 'User Management'),
-            'admin_permissions': ('
+            'admin_permissions': ('🔐', 'Role Permissions'),
+            'admin_logs': ('📋', 'Activity Logs'),
+            'admin_modules': ('📦', 'Module Management')
+        }
+        
+        if current_module in admin_modules:
+            module_icon, module_name = admin_modules[current_module]
+        
+        st.markdown(f"## {module_icon} {module_name}")
+        st.markdown("---")
+    else:
+        st.markdown("## 🏠 Dashboard")
+        st.markdown("---")
