@@ -901,7 +901,21 @@ def generate_excel_template() -> bytes:
         ])
     else:
         template_df = df[[
-            'product_id', 'variation_id', 'product_name', 'sku',
+            'product_id', 'variation_id', 'product_name', 'parent_product', 'sku',
+            'stock_quantity', 'regular_price', 'sale_price'
+        ]].copy()
+        
+        # Combine parent and product name for variations
+        template_df['display_name'] = template_df.apply(
+            lambda row: f"{row['parent_product']} - {row['product_name']}" 
+            if pd.notna(row['parent_product']) and pd.notna(row['variation_id']) 
+            else row['product_name'],
+            axis=1
+        )
+        
+        # Reorder and rename columns
+        template_df = template_df[[
+            'product_id', 'variation_id', 'display_name', 'sku',
             'stock_quantity', 'regular_price', 'sale_price'
         ]].copy()
         
