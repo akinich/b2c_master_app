@@ -3,21 +3,14 @@ Database Helper Functions for WooCommerce Products
 Handles all database operations for the product management module
 """
 
-from supabase import Client
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import streamlit as st
+from config.database import Database
 
 
 class ProductDB:
     """Database operations for WooCommerce products"""
-    
-    @staticmethod
-    def get_supabase() -> Client:
-        """Get Supabase client from session state"""
-        if 'supabase' not in st.session_state:
-            raise Exception("Supabase client not initialized")
-        return st.session_state.supabase
     
     # ==========================================
     # CREATE OPERATIONS
@@ -36,7 +29,7 @@ class ProductDB:
             bool: Success status
         """
         try:
-            supabase = ProductDB.get_supabase()
+            supabase = Database.get_client()
             
             # Validate HSN if provided (must be numeric only)
             if product_data.get('hsn'):
@@ -49,206 +42,119 @@ class ProductDB:
             # Add audit fields
             product_data['created_by'] = username
             product_data['updated_by'] = username
+            product_data['created_at'] = datetime.now().isoformat()
             product_data['last_synced'] = datetime.now().isoformat()
             
+            # Insert into database
             supabase.table('woocommerce_products').insert(product_data).execute()
+            
             return True
             
         except Exception as e:
             st.error(f"Error adding product: {str(e)}")
             return False
     
-    @staticmethod
-    def bulk_add_products(products: List[Dict], username: str) -> Tuple[int, int]:
-        """
-        Bulk add products (used for WooCommerce sync)
-        
-        Args:
-            products: List of product dictionaries
-            username: User performing the sync
-            
-        Returns:
-            Tuple[int, int]: (products_added, products_skipped)
-        """
-        try:
-            supabase = ProductDB.get_supabase()
-            added = 0
-            skipped = 0
-            
-            for product in products:
-                # Check if product already exists
-                existing = supabase.table('woocommerce_products').select('id').eq(
-                    'product_id', product['product_id']
-                )
-                
-                if product.get('variation_id'):
-                    existing = existing.eq('variation_id', product['variation_id'])
-                else:
-                    existing = existing.is_('variation_id', 'null')
-                
-                result = existing.execute()
-                
-                if result.data:
-                    # Product exists, skip
-                    skipped += 1
-                else:
-                    # Add new product
-                    product['created_by'] = username
-                    product['updated_by'] = username
-                    product['last_synced'] = datetime.now().isoformat()
-                    
-                    supabase.table('woocommerce_products').insert(product).execute()
-                    added += 1
-            
-            return added, skipped
-            
-        except Exception as e:
-            st.error(f"Error in bulk add: {str(e)}")
-            return 0, 0
-    
     # ==========================================
     # READ OPERATIONS
     # ==========================================
     
     @staticmethod
-    def get_all_products(
-        active_only: bool = True,
-        search: Optional[str] = None,
-        status_filter: Optional[str] = None,
-        category_filter: Optional[str] = None
-    ) -> List[Dict]:
+    def get_all_products(active_only: bool = True) -> List[Dict]:
         """
-        Get all products with optional filters
+        Get all products from database
         
         Args:
-            active_only: Only return active products
-            search: Search term for product name
-            status_filter: Filter by product status
-            category_filter: Filter by category
+            active_only: If True, only return active products
             
         Returns:
-            List[Dict]: List of products
+            List of product dictionaries
         """
         try:
-            supabase = ProductDB.get_supabase()
+            supabase = Database.get_client()
+            
             query = supabase.table('woocommerce_products').select('*')
             
-            # Apply filters
             if active_only:
                 query = query.eq('is_active', True)
             
-            if search:
-                query = query.ilike('product_name', f'%{search}%')
+            response = query.order('product_name').execute()
             
-            if status_filter and status_filter != 'All':
-                query = query.eq('product_status', status_filter)
-            
-            if category_filter and category_filter != 'All':
-                query = query.ilike('categories', f'%{category_filter}%')
-            
-            # Order by product_id and variation_id
-            query = query.order('product_id').order('variation_id', desc=False, nullsfirst=True)
-            
-            result = query.execute()
-            return result.data if result.data else []
+            return response.data if response.data else []
             
         except Exception as e:
             st.error(f"Error fetching products: {str(e)}")
             return []
     
     @staticmethod
-    def get_product_by_id(product_id: int, variation_id: Optional[int] = None) -> Optional[Dict]:
-        """Get a specific product by ID"""
+    def search_products(search_term: str, active_only: bool = True) -> List[Dict]:
+        """
+        Search products by name
+        
+        Args:
+            search_term: Search string
+            active_only: If True, only search active products
+            
+        Returns:
+            List of matching product dictionaries
+        """
         try:
-            supabase = ProductDB.get_supabase()
-            query = supabase.table('woocommerce_products').select('*').eq('product_id', product_id)
+            supabase = Database.get_client()
             
-            if variation_id:
-                query = query.eq('variation_id', variation_id)
-            else:
-                query = query.is_('variation_id', 'null')
+            query = supabase.table('woocommerce_products').select('*')
             
-            result = query.execute()
-            return result.data[0] if result.data else None
+            if active_only:
+                query = query.eq('is_active', True)
             
+            query = query.ilike('product_name', f'%{search_term}%')
+            
+            response = query.order('product_name').execute()
+            
+            return response.data if response.data else []
+            
+        except Exception as e:
+            st.error(f"Error searching products: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_product_by_id(db_id: int) -> Optional[Dict]:
+        """Get a single product by database ID"""
+        try:
+            supabase = Database.get_client()
+            response = supabase.table('woocommerce_products').select('*').eq('id', db_id).execute()
+            return response.data[0] if response.data else None
         except Exception as e:
             st.error(f"Error fetching product: {str(e)}")
             return None
     
     @staticmethod
-    def get_unique_statuses() -> List[str]:
-        """Get list of unique product statuses"""
-        try:
-            supabase = ProductDB.get_supabase()
-            result = supabase.table('woocommerce_products').select('product_status').execute()
+    def check_product_exists(product_id: int, variation_id: Optional[int] = None) -> bool:
+        """
+        Check if a product/variation already exists in database
+        
+        Args:
+            product_id: WooCommerce product ID
+            variation_id: WooCommerce variation ID (None for simple products)
             
-            if result.data:
-                statuses = list(set([p['product_status'] for p in result.data if p.get('product_status')]))
-                return sorted(statuses)
-            return []
+        Returns:
+            bool: True if exists, False otherwise
+        """
+        try:
+            supabase = Database.get_client()
+            
+            query = supabase.table('woocommerce_products').select('id').eq('product_id', product_id)
+            
+            if variation_id is not None:
+                query = query.eq('variation_id', variation_id)
+            else:
+                query = query.is_('variation_id', 'null')
+            
+            response = query.execute()
+            
+            return len(response.data) > 0
             
         except Exception as e:
-            st.error(f"Error fetching statuses: {str(e)}")
-            return []
-    
-    @staticmethod
-    def get_unique_categories() -> List[str]:
-        """Get list of unique categories"""
-        try:
-            supabase = ProductDB.get_supabase()
-            result = supabase.table('woocommerce_products').select('categories').execute()
-            
-            if result.data:
-                all_categories = set()
-                for p in result.data:
-                    if p.get('categories'):
-                        # Split comma-separated categories
-                        cats = [c.strip() for c in p['categories'].split(',')]
-                        all_categories.update(cats)
-                return sorted(list(all_categories))
-            return []
-            
-        except Exception as e:
-            st.error(f"Error fetching categories: {str(e)}")
-            return []
-    
-    @staticmethod
-    def get_product_stats() -> Dict:
-        """Get product statistics"""
-        try:
-            supabase = ProductDB.get_supabase()
-            result = supabase.table('woocommerce_products').select('*').execute()
-            
-            if not result.data:
-                return {
-                    'total': 0,
-                    'active': 0,
-                    'inactive': 0,
-                    'simple': 0,
-                    'variations': 0,
-                    'missing_hsn': 0
-                }
-            
-            products = result.data
-            total = len(products)
-            active = sum(1 for p in products if p.get('is_active'))
-            inactive = total - active
-            simple = sum(1 for p in products if not p.get('variation_id'))
-            variations = total - simple
-            missing_hsn = sum(1 for p in products if not p.get('hsn'))
-            
-            return {
-                'total': total,
-                'active': active,
-                'inactive': inactive,
-                'simple': simple,
-                'variations': variations,
-                'missing_hsn': missing_hsn
-            }
-            
-        except Exception as e:
-            st.error(f"Error fetching stats: {str(e)}")
-            return {}
+            st.error(f"Error checking product existence: {str(e)}")
+            return False
     
     # ==========================================
     # UPDATE OPERATIONS
@@ -257,18 +163,18 @@ class ProductDB:
     @staticmethod
     def update_product(db_id: int, updates: Dict, username: str) -> bool:
         """
-        Update a product
+        Update a product in the database
         
         Args:
             db_id: Database ID of the product
             updates: Dictionary with fields to update
-            username: User performing the update
+            username: User making the update
             
         Returns:
             bool: Success status
         """
         try:
-            supabase = ProductDB.get_supabase()
+            supabase = Database.get_client()
             
             # Validate HSN if being updated
             if 'hsn' in updates and updates['hsn']:
@@ -281,7 +187,9 @@ class ProductDB:
             # Add audit field
             updates['updated_by'] = username
             
+            # Update in database
             supabase.table('woocommerce_products').update(updates).eq('id', db_id).execute()
+            
             return True
             
         except Exception as e:
@@ -289,51 +197,27 @@ class ProductDB:
             return False
     
     @staticmethod
-    def bulk_update_products(product_ids: List[int], updates: Dict, username: str) -> int:
+    def bulk_update_products(updates: List[Tuple[int, Dict]], username: str) -> Tuple[int, int]:
         """
         Bulk update multiple products
         
         Args:
-            product_ids: List of database IDs
-            updates: Dictionary with fields to update
-            username: User performing the update
+            updates: List of tuples (db_id, update_dict)
+            username: User making the updates
             
         Returns:
-            int: Number of products updated
+            Tuple of (success_count, failure_count)
         """
-        try:
-            supabase = ProductDB.get_supabase()
-            
-            # Validate HSN if being updated
-            if 'hsn' in updates and updates['hsn']:
-                hsn = str(updates['hsn']).strip()
-                if not hsn.isdigit():
-                    st.error("❌ HSN must contain only numbers")
-                    return 0
-                updates['hsn'] = hsn
-            
-            # Add audit field
-            updates['updated_by'] = username
-            
-            count = 0
-            for db_id in product_ids:
-                supabase.table('woocommerce_products').update(updates).eq('id', db_id).execute()
-                count += 1
-            
-            return count
-            
-        except Exception as e:
-            st.error(f"Error in bulk update: {str(e)}")
-            return 0
-    
-    @staticmethod
-    def mark_products_inactive(product_ids: List[int], username: str) -> int:
-        """Mark products as inactive (soft delete)"""
-        return ProductDB.bulk_update_products(
-            product_ids, 
-            {'is_active': False}, 
-            username
-        )
+        success_count = 0
+        failure_count = 0
+        
+        for db_id, update_dict in updates:
+            if ProductDB.update_product(db_id, update_dict, username):
+                success_count += 1
+            else:
+                failure_count += 1
+        
+        return success_count, failure_count
     
     # ==========================================
     # DELETE OPERATIONS
@@ -342,7 +226,7 @@ class ProductDB:
     @staticmethod
     def delete_product(db_id: int) -> bool:
         """
-        Hard delete a product
+        Hard delete a product from database
         
         Args:
             db_id: Database ID of the product
@@ -351,7 +235,7 @@ class ProductDB:
             bool: Success status
         """
         try:
-            supabase = ProductDB.get_supabase()
+            supabase = Database.get_client()
             supabase.table('woocommerce_products').delete().eq('id', db_id).execute()
             return True
             
@@ -360,66 +244,133 @@ class ProductDB:
             return False
     
     @staticmethod
-    def bulk_delete_products(product_ids: List[int]) -> int:
+    def mark_inactive(product_id: int, variation_id: Optional[int] = None) -> bool:
         """
-        Bulk delete multiple products (hard delete)
+        Mark a product as inactive (soft delete)
         
         Args:
-            product_ids: List of database IDs
+            product_id: WooCommerce product ID
+            variation_id: WooCommerce variation ID
             
         Returns:
-            int: Number of products deleted
+            bool: Success status
         """
         try:
-            supabase = ProductDB.get_supabase()
-            count = 0
+            supabase = Database.get_client()
             
-            for db_id in product_ids:
-                supabase.table('woocommerce_products').delete().eq('id', db_id).execute()
-                count += 1
+            query = supabase.table('woocommerce_products').update({'is_active': False}).eq('product_id', product_id)
             
-            return count
+            if variation_id is not None:
+                query = query.eq('variation_id', variation_id)
+            else:
+                query = query.is_('variation_id', 'null')
+            
+            query.execute()
+            
+            return True
             
         except Exception as e:
-            st.error(f"Error in bulk delete: {str(e)}")
-            return 0
+            st.error(f"Error marking product inactive: {str(e)}")
+            return False
     
     # ==========================================
     # SYNC OPERATIONS
     # ==========================================
     
     @staticmethod
-    def mark_missing_products_inactive(wc_product_ids: List[int], username: str) -> int:
+    def sync_from_woocommerce(products: List[Dict], username: str) -> Tuple[int, int, int]:
         """
-        Mark products as inactive if they're not in the WooCommerce product list
+        Sync products from WooCommerce to database
+        Only adds NEW products, doesn't update existing ones
         
         Args:
-            wc_product_ids: List of product IDs from WooCommerce
+            products: List of product dictionaries from WooCommerce API
             username: User performing the sync
             
         Returns:
-            int: Number of products marked inactive
+            Tuple of (added_count, skipped_count, error_count)
         """
+        added_count = 0
+        skipped_count = 0
+        error_count = 0
+        
+        for product in products:
+            try:
+                # Check if product already exists
+                product_id = product.get('id')
+                variation_id = product.get('variation_id')
+                
+                if ProductDB.check_product_exists(product_id, variation_id):
+                    skipped_count += 1
+                    continue
+                
+                # Prepare product data
+                product_data = {
+                    'product_id': product_id,
+                    'variation_id': variation_id,
+                    'sku': product.get('sku', ''),
+                    'product_name': product.get('name', ''),
+                    'parent_product': product.get('parent_name', ''),
+                    'attribute': product.get('attributes', ''),
+                    'regular_price': product.get('regular_price', 0),
+                    'stock_quantity': product.get('stock_quantity', 0),
+                    'product_status': product.get('status', 'publish'),
+                    'categories': product.get('categories', ''),
+                    'is_active': True,
+                    'last_synced': datetime.now().isoformat()
+                }
+                
+                # Add the product
+                if ProductDB.add_product(product_data, username):
+                    added_count += 1
+                else:
+                    error_count += 1
+                    
+            except Exception as e:
+                st.warning(f"Error syncing product {product.get('id')}: {str(e)}")
+                error_count += 1
+        
+        return added_count, skipped_count, error_count
+    
+    # ==========================================
+    # STATISTICS
+    # ==========================================
+    
+    @staticmethod
+    def get_product_stats() -> Dict:
+        """Get product statistics"""
         try:
-            supabase = ProductDB.get_supabase()
+            supabase = Database.get_client()
             
-            # Get all active products from database
-            result = supabase.table('woocommerce_products').select('id, product_id').eq('is_active', True).execute()
+            # Total products
+            total_response = supabase.table('woocommerce_products').select('id', count='exact').execute()
+            total = total_response.count if total_response.count else 0
             
-            if not result.data:
-                return 0
+            # Active products
+            active_response = supabase.table('woocommerce_products').select('id', count='exact').eq('is_active', True).execute()
+            active = active_response.count if active_response.count else 0
             
-            # Find products not in WooCommerce list
-            missing_ids = [
-                p['id'] for p in result.data 
-                if p['product_id'] not in wc_product_ids
-            ]
+            # Simple products (variation_id is NULL)
+            simple_response = supabase.table('woocommerce_products').select('id', count='exact').is_('variation_id', 'null').eq('is_active', True).execute()
+            simple = simple_response.count if simple_response.count else 0
             
-            if missing_ids:
-                return ProductDB.mark_products_inactive(missing_ids, username)
+            # Variations (variation_id is NOT NULL)
+            variations = active - simple
             
-            return 0
+            return {
+                'total': total,
+                'active': active,
+                'inactive': total - active,
+                'simple': simple,
+                'variations': variations
+            }
             
         except Exception as e:
-            st.error(f"Error marking missing products: {str(e)}")
-          return 0
+            st.error(f"Error fetching stats: {str(e)}")
+            return {
+                'total': 0,
+                'active': 0,
+                'inactive': 0,
+                'simple': 0,
+                'variations': 0
+            }
