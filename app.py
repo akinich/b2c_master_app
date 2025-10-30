@@ -28,18 +28,18 @@ def load_module(module_key: str):
     """
     Dynamically load and display a module
     Args:
-        module_key: The key of the module to load (e.g., 'order_extractor')
+        module_key: The key of the module to load (e.g., 'mrp_label_generator')
     """
     try:
         # Import the module dynamically
-        module = __import__(f'modules.{module_key}', fromlist=['run'])
+        module = __import__(f'modules.{module_key}', fromlist=['show'])
         
-        # Check if module has a 'run' function
-        if hasattr(module, 'run'):
-            module.run()
+        # Check if module has a 'show' function
+        if hasattr(module, 'show'):
+            module.show()
         else:
-            st.error(f"Module '{module_key}' does not have a 'run()' function")
-            st.info("Each module file must contain a run() function as the entry point")
+            st.error(f"Module '{module_key}' does not have a 'show()' function")
+            st.info("Each module file must contain a show() function as the entry point")
     
     except ModuleNotFoundError:
         st.error(f"Module '{module_key}' not found")
@@ -51,7 +51,7 @@ import streamlit as st
 from auth.session import SessionManager
 from config.database import ActivityLogger
 
-def run():
+def show():
     '''Main function for {module_key} module'''
     
     # Ensure user has access
