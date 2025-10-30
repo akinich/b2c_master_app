@@ -1,286 +1,202 @@
 """
-Session management for user authentication and access control
-UPDATED FOR HYBRID PERMISSION SYSTEM (Admin + User with module-level permissions)
+Session management with hybrid permission system
+Admins have full access, Users have per-module permissions
 """
 import streamlit as st
-from typing import Optional, Dict, List
-from config.database import Database, UserDB, UserPermissionDB, ActivityLogger
+from typing import Dict, List, Optional
+from config.database import Database, UserDB, UserPermissionDB, ModuleDB, ActivityLogger
+
 
 class SessionManager:
-    """Manages user session, authentication state, and access control"""
+    """
+    Manages user sessions and permissions
+    Uses hybrid permission system:
+    - Admins: Automatic access to all modules
+    - Users: Check user_module_permissions table
+    """
     
     @staticmethod
     def init_session():
         """Initialize session state variables"""
+        if 'authenticated' not in st.session_state:
+            st.session_state.authenticated = False
         if 'user' not in st.session_state:
             st.session_state.user = None
-        if 'user_profile' not in st.session_state:
-            st.session_state.user_profile = None
+        if 'profile' not in st.session_state:
+            st.session_state.profile = None
         if 'accessible_modules' not in st.session_state:
             st.session_state.accessible_modules = []
         if 'current_module' not in st.session_state:
-            st.session_state.current_module = 'dashboard'
+            st.session_state.current_module = None
     
     @staticmethod
-    def login(email: str, password: str) -> tuple[bool, Optional[str]]:
+    def login(user_dict: Dict) -> bool:
         """
-        Authenticate user with Supabase
-        Returns: (success: bool, error_message: Optional[str])
+        Handle user login
+        Args:
+            user_dict: Dict with 'id' and 'email' from Supabase auth
+        Returns:
+            True if successful, False otherwise
         """
         try:
-            db = Database.get_client()
+            # Get user profile from database
+            profile = UserDB.get_user_profile(user_dict['id'])
             
-            # Authenticate with Supabase
-            response = db.auth.sign_in_with_password({
-                "email": email,
-                "password": password
-            })
+            if not profile:
+                st.error("User profile not found. Please contact administrator.")
+                return False
             
-            if response.user:
-                user = response.user
-                
-                # Load user profile
-                profile = UserDB.get_user_profile(user.id)
-                
-                if not profile:
-                    return False, "User profile not found. Please contact administrator."
-                
-                if not profile.get('is_active', False):
-                    return False, "Your account has been deactivated. Please contact administrator."
-                
-                # Set user in session
-                SessionManager.set_user(user.model_dump())
-                
-                # Log successful login
-                ActivityLogger.log(
-                    user_id=user.id,
-                    action_type='login',
-                    description=f"User {email} logged in successfully"
-                )
-                
-                return True, None
+            if not profile.get('is_active', False):
+                st.error("Your account is inactive. Please contact administrator.")
+                return False
+            
+            # Set session state
+            st.session_state.authenticated = True
+            st.session_state.user = user_dict
+            st.session_state.profile = profile
+            
+            # Load accessible modules using hybrid permissions
+            st.session_state.accessible_modules = SessionManager._load_accessible_modules(
+                user_dict['id'], 
+                profile
+            )
+            
+            # Log successful login
+            ActivityLogger.log(
+                user_id=user_dict['id'],
+                action_type='login',
+                module_key='auth',
+                description=f"User {profile.get('full_name', user_dict['email'])} logged in"
+            )
+            
+            return True
+            
+        except Exception as e:
+            st.error(f"Login error: {str(e)}")
+            return False
+    
+    @staticmethod
+    def _load_accessible_modules(user_id: str, profile: Dict) -> List[Dict]:
+        """
+        Load modules user can access using hybrid permission system
+        - Admins: Get all active modules
+        - Users: Get modules from user_module_permissions
+        """
+        try:
+            role_name = profile.get('role_name', '').lower()
+            
+            # Admins get all modules
+            if role_name == 'admin':
+                return ModuleDB.get_all_modules()
+            
+            # Users: Check user_module_permissions table
             else:
-                return False, "Invalid email or password"
+                return UserPermissionDB.get_user_modules(user_id)
                 
         except Exception as e:
-            error_msg = str(e)
-            
-            # Handle specific Supabase auth errors
-            if "Invalid login credentials" in error_msg:
-                return False, "Invalid email or password"
-            elif "Email not confirmed" in error_msg:
-                return False, "Please verify your email address before logging in"
-            elif "User not found" in error_msg:
-                return False, "No account found with this email"
-            else:
-                return False, f"Login failed: {error_msg}"
+            st.error(f"Error loading modules: {str(e)}")
+            return []
     
     @staticmethod
     def logout():
-        """Log out current user"""
+        """Handle user logout"""
         try:
-            user = SessionManager.get_user()
-            if user:
-                # Log logout activity
+            # Log logout action
+            if st.session_state.get('user'):
                 ActivityLogger.log(
-                    user_id=user['id'],
+                    user_id=st.session_state.user['id'],
                     action_type='logout',
-                    description=f"User {user.get('email')} logged out"
+                    module_key='auth',
+                    description=f"User logged out"
                 )
             
-            # Sign out from Supabase
-            db = Database.get_client()
-            db.auth.sign_out()
+            # Clear session
+            st.session_state.authenticated = False
+            st.session_state.user = None
+            st.session_state.profile = None
+            st.session_state.accessible_modules = []
+            st.session_state.current_module = None
             
         except Exception as e:
-            # Continue with local logout even if Supabase logout fails
-            print(f"Error during Supabase logout: {str(e)}")
-        
-        finally:
-            # Clear session state
-            SessionManager.clear_session()
+            st.error(f"Logout error: {str(e)}")
     
     @staticmethod
-    def is_logged_in() -> bool:
-        """Check if user is logged in"""
-        return st.session_state.get('user') is not None
+    def is_authenticated() -> bool:
+        """Check if user is authenticated"""
+        return st.session_state.get('authenticated', False)
     
     @staticmethod
     def get_user() -> Optional[Dict]:
-        """Get current user from session"""
+        """Get current user"""
         return st.session_state.get('user')
     
     @staticmethod
     def get_user_profile() -> Optional[Dict]:
-        """Get user profile with role information"""
-        return st.session_state.get('user_profile')
-    
-    @staticmethod
-    def get_user_id() -> Optional[str]:
-        """Get current user ID"""
-        user = SessionManager.get_user()
-        return user.get('id') if user else None
-    
-    @staticmethod
-    def get_role() -> Optional[str]:
-        """Get user role (lowercase: 'admin' or 'user')"""
-        profile = SessionManager.get_user_profile()
-        if profile:
-            return profile.get('role_name', '').lower()
-        return None
+        """Get current user profile"""
+        return st.session_state.get('profile')
     
     @staticmethod
     def is_admin() -> bool:
         """Check if current user is admin"""
-        return SessionManager.get_role() == 'admin'
+        profile = st.session_state.get('profile')
+        if profile:
+            return profile.get('role_name', '').lower() == 'admin'
+        return False
     
     @staticmethod
-    def is_user() -> bool:
-        """Check if current user is a regular user (non-admin)"""
-        return SessionManager.get_role() == 'user'
-    
-    @staticmethod
-    def set_user(user: Dict):
-        """Set logged in user"""
-        st.session_state.user = user
-        
-        # Load user profile
-        profile = UserDB.get_user_profile(user['id'])
-        st.session_state.user_profile = profile
-        
-        # Load accessible modules (hybrid permission check)
-        modules = UserDB.get_user_modules(user['id'])
-        st.session_state.accessible_modules = modules
-    
-    @staticmethod
-    def clear_session():
-        """Clear all session data (logout)"""
-        st.session_state.user = None
-        st.session_state.user_profile = None
-        st.session_state.accessible_modules = []
-        st.session_state.current_module = 'dashboard'
+    def is_manager() -> bool:
+        """Check if current user is manager (legacy - now treated as user)"""
+        profile = st.session_state.get('profile')
+        if profile:
+            role = profile.get('role_name', '').lower()
+            return role == 'manager' or role == 'user'
+        return False
     
     @staticmethod
     def get_accessible_modules() -> List[Dict]:
-        """Get list of modules accessible to current user"""
+        """Get list of modules user can access"""
         return st.session_state.get('accessible_modules', [])
     
     @staticmethod
     def has_module_access(module_key: str) -> bool:
         """
-        Check if current user has access to a specific module
-        HYBRID PERMISSION CHECK:
-        - Admins: Always have access to all modules
-        - Users: Check user_module_permissions
+        Check if user has access to a specific module
+        Uses hybrid permission system
         """
-        # Admin has access to everything
+        # Admin always has access
         if SessionManager.is_admin():
             return True
         
-        # Check if module is in accessible modules list
-        modules = SessionManager.get_accessible_modules()
-        return any(m.get('module_key') == module_key for m in modules)
+        # Check if module is in user's accessible modules
+        accessible_modules = st.session_state.get('accessible_modules', [])
+        return any(m.get('module_key') == module_key for m in accessible_modules)
     
     @staticmethod
-    def require_access(module_key: str):
+    def require_module_access(module_key: str):
         """
-        Require module access, stop execution if not authorized
-        Use this at the start of module run() functions
+        Require module access or stop execution
+        Use this at the start of each module's show() function
         """
         if not SessionManager.has_module_access(module_key):
-            st.error("🚫 You don't have access to this module.")
-            st.info("Contact your administrator to request access.")
+            st.error("⛔ Access Denied")
+            st.warning("You don't have permission to access this module.")
+            st.info("Contact your administrator if you need access.")
             st.stop()
     
     @staticmethod
     def require_admin():
-        """Require admin role, stop execution if not admin"""
+        """Require admin access or stop execution"""
         if not SessionManager.is_admin():
-            st.error("🚫 Admin access required.")
-            st.info("This page is only accessible to administrators.")
-            st.stop()
-    
-    @staticmethod
-    def require_login():
-        """Require user to be logged in, redirect to login if not"""
-        if not SessionManager.is_logged_in():
-            st.warning("⚠️ Please log in to continue")
+            st.error("⛔ Admin Access Required")
+            st.warning("This section is only accessible to administrators.")
             st.stop()
     
     @staticmethod
     def set_current_module(module_key: str):
-        """Set the currently active module"""
+        """Set the current active module"""
         st.session_state.current_module = module_key
     
     @staticmethod
-    def get_current_module() -> str:
-        """Get the currently active module"""
-        return st.session_state.get('current_module', 'dashboard')
-    
-    @staticmethod
-    def refresh_permissions():
-        """
-        Refresh user's module permissions
-        Call this after admin changes permissions
-        """
-        user = SessionManager.get_user()
-        if user:
-            modules = UserDB.get_user_modules(user['id'])
-            st.session_state.accessible_modules = modules
-    
-    @staticmethod
-    def log_activity(action_type: str, module_key: str = None, 
-                    description: str = None, metadata: Dict = None,
-                    success: bool = True):
-        """
-        Log user activity
-        Convenience method for activity logging
-        """
-        user_id = SessionManager.get_user_id()
-        if user_id:
-            ActivityLogger.log(
-                user_id=user_id,
-                action_type=action_type,
-                module_key=module_key,
-                description=description,
-                metadata=metadata,
-                success=success
-            )
-    
-    # ==========================================
-    # BACKWARDS COMPATIBILITY METHODS
-    # ==========================================
-    # These methods maintain compatibility with old code
-    # that used 'manager' role
-    
-    @staticmethod
-    def is_manager() -> bool:
-        """
-        DEPRECATED: Manager role no longer exists
-        Returns False for compatibility
-        """
-        return False
-    
-    @staticmethod
-    def has_role(role_name: str) -> bool:
-        """
-        Check if user has a specific role
-        Only 'admin' and 'user' are valid now
-        """
-        current_role = SessionManager.get_role()
-        return current_role == role_name.lower()
-    
-    @staticmethod
-    def can_manage_users() -> bool:
-        """Check if user can manage other users (admin only)"""
-        return SessionManager.is_admin()
-    
-    @staticmethod
-    def can_view_logs() -> bool:
-        """Check if user can view activity logs (admin only)"""
-        return SessionManager.is_admin()
-    
-    @staticmethod
-    def can_manage_permissions() -> bool:
-        """Check if user can manage permissions (admin only)"""
-        return SessionManager.is_admin()
+    def get_current_module() -> Optional[str]:
+        """Get the current active module key"""
+        return st.session_state.get('current_module')
