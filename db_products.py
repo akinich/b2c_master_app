@@ -313,6 +313,7 @@ class ProductDB:
                     'parent_product': product.get('parent_name', ''),
                     'attribute': product.get('attributes', ''),
                     'regular_price': product.get('regular_price', 0),
+                    'sale_price': product.get('sale_price', 0),
                     'stock_quantity': product.get('stock_quantity', 0),
                     'product_status': product.get('status', 'publish'),
                     'categories': product.get('categories', ''),
