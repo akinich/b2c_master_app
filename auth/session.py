@@ -4,7 +4,7 @@ Compatible with existing login.py implementation
 """
 import streamlit as st
 from typing import Dict, List, Optional, Tuple
-from config.database import Database, UserDB, UserPermissionDB, ModuleDB, ActivityLogger
+from config.database import Database, UserDB, ModuleDB, ActivityLogger
 
 
 class SessionManager:
@@ -106,7 +106,7 @@ class SessionManager:
         """
         Load modules user can access using hybrid permission system
         - Admins: Get all active modules
-        - Users: Get modules from user_module_permissions
+        - Users: Get modules from user_module_permissions via RPC
         """
         try:
             role_name = profile.get('role_name', '').lower()
@@ -115,9 +115,9 @@ class SessionManager:
             if role_name == 'admin':
                 return ModuleDB.get_all_modules()
             
-            # Users: Check user_module_permissions table
+            # Users: Get modules via UserDB.get_user_modules RPC call
             else:
-                return UserPermissionDB.get_user_modules(user_id)
+                return UserDB.get_user_modules(user_id)
                 
         except Exception as e:
             st.error(f"Error loading modules: {str(e)}")
