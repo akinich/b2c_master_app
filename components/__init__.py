@@ -15,7 +15,7 @@ __all__ = [
     'show_module_breadcrumb',
     'show_dashboard',
     'show_user_management',
-    'show_role_permissions',
+    'show_user_permissions',
     'show_activity_logs',
     'show_module_management'
 ]
