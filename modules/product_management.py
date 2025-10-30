@@ -140,10 +140,9 @@ def show_products_tab(username: str, is_admin: bool):
     
     # Select and reorder columns for display
     display_cols = [
-        'id', 'product_id', 'variation_id', 'sku', 'product_name', 
-        'parent_product', 'attribute', 'regular_price', 'stock_quantity',
-        'product_status', 'hsn', 'zoho_name', 'usage_units', 
-        'categories', 'is_active'
+        'id', 'product_id', 'variation_id', 'product_name', 
+        'parent_product', 'sku', 'stock_quantity', 'regular_price', 'sale_price',
+        'hsn', 'zoho_name', 'categories', 'attribute', 'is_active', 'notes'
     ]
     
     # Only include columns that exist
@@ -157,37 +156,37 @@ def show_products_tab(username: str, is_admin: bool):
             "id": st.column_config.NumberColumn("DB ID", disabled=True),
             "product_id": st.column_config.NumberColumn("Product ID", disabled=True),
             "variation_id": st.column_config.NumberColumn("Variation ID", disabled=True),
-            "sku": st.column_config.TextColumn("SKU"),
             "product_name": st.column_config.TextColumn("Product Name", width="large"),
-            "parent_product": st.column_config.TextColumn("Parent"),
-            "attribute": st.column_config.TextColumn("Attributes"),
-            "regular_price": st.column_config.NumberColumn("Price", format="$%.2f"),
+            "parent_product": st.column_config.TextColumn("Parent Name"),
+            "sku": st.column_config.TextColumn("SKU"),
             "stock_quantity": st.column_config.NumberColumn("Stock"),
-            "product_status": st.column_config.TextColumn("Status"),
+            "regular_price": st.column_config.NumberColumn("Regular Price", format="$%.2f"),
+            "sale_price": st.column_config.NumberColumn("Sale Price", format="$%.2f"),
             "hsn": st.column_config.TextColumn("HSN", help="Numeric only"),
             "zoho_name": st.column_config.TextColumn("Zoho Name"),
-            "usage_units": st.column_config.TextColumn("Units"),
             "categories": st.column_config.TextColumn("Categories"),
-            "is_active": st.column_config.CheckboxColumn("Active")
+            "attribute": st.column_config.TextColumn("Attributes"),
+            "is_active": st.column_config.CheckboxColumn("Active"),
+            "notes": st.column_config.TextColumn("Notes", width="medium")
         }
     else:
-        # Regular users can only edit HSN, Zoho Name, Usage Units
+        # Regular users can only edit HSN, Zoho Name, Usage Units, Notes
         column_config = {
             "id": st.column_config.NumberColumn("DB ID", disabled=True),
             "product_id": st.column_config.NumberColumn("Product ID", disabled=True),
             "variation_id": st.column_config.NumberColumn("Variation ID", disabled=True),
-            "sku": st.column_config.TextColumn("SKU", disabled=True),
             "product_name": st.column_config.TextColumn("Product Name", width="large", disabled=True),
-            "parent_product": st.column_config.TextColumn("Parent", disabled=True),
-            "attribute": st.column_config.TextColumn("Attributes", disabled=True),
-            "regular_price": st.column_config.NumberColumn("Price", format="$%.2f", disabled=True),
+            "parent_product": st.column_config.TextColumn("Parent Name", disabled=True),
+            "sku": st.column_config.TextColumn("SKU", disabled=True),
             "stock_quantity": st.column_config.NumberColumn("Stock", disabled=True),
-            "product_status": st.column_config.TextColumn("Status", disabled=True),
+            "regular_price": st.column_config.NumberColumn("Regular Price", format="$%.2f", disabled=True),
+            "sale_price": st.column_config.NumberColumn("Sale Price", format="$%.2f", disabled=True),
             "hsn": st.column_config.TextColumn("HSN", help="Numeric only"),
             "zoho_name": st.column_config.TextColumn("Zoho Name"),
-            "usage_units": st.column_config.TextColumn("Units"),
             "categories": st.column_config.TextColumn("Categories", disabled=True),
-            "is_active": st.column_config.CheckboxColumn("Active", disabled=True)
+            "attribute": st.column_config.TextColumn("Attributes", disabled=True),
+            "is_active": st.column_config.CheckboxColumn("Active", disabled=True),
+            "notes": st.column_config.TextColumn("Notes", width="medium")
         }
     
     # Display editable data table
@@ -235,11 +234,11 @@ def save_product_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame, use
         if is_admin:
             # Admin can edit most fields
             editable_fields = ['sku', 'product_name', 'parent_product', 'attribute', 
-                             'regular_price', 'stock_quantity', 'product_status',
-                             'hsn', 'zoho_name', 'usage_units', 'categories', 'is_active']
+                             'regular_price', 'sale_price', 'stock_quantity', 'product_status',
+                             'hsn', 'zoho_name', 'usage_units', 'categories', 'is_active', 'notes']
         else:
             # Regular users can only edit these fields
-            editable_fields = ['hsn', 'zoho_name', 'usage_units']
+            editable_fields = ['hsn', 'zoho_name', 'usage_units', 'notes']
         
         for field in editable_fields:
             if field in original_row and field in edited_row:
@@ -432,6 +431,7 @@ def fetch_wc_products(api_url: str, consumer_key: str, consumer_secret: str, lim
                 'sku': product.get('sku', ''),
                 'type': product.get('type', 'simple'),
                 'regular_price': float(product.get('regular_price', 0) or 0),
+                'sale_price': float(product.get('sale_price', 0) or 0),
                 'stock_quantity': product.get('stock_quantity', 0),
                 'status': product.get('status', 'publish'),
                 'categories': ', '.join([cat['name'] for cat in product.get('categories', [])]),
@@ -472,6 +472,7 @@ def fetch_wc_variations(api_url: str, consumer_key: str, consumer_secret: str, p
                 'sku': variation.get('sku', ''),
                 'type': 'variation',
                 'regular_price': float(variation.get('regular_price', 0) or 0),
+                'sale_price': float(variation.get('sale_price', 0) or 0),
                 'stock_quantity': variation.get('stock_quantity', 0),
                 'status': variation.get('status', 'publish'),
                 'attributes': attrs,
@@ -503,16 +504,18 @@ def show_add_product_tab(username: str):
             product_name = st.text_input("Product Name *", help="Required")
             parent_product = st.text_input("Parent Product")
             attribute = st.text_input("Attributes")
+            regular_price = st.number_input("Regular Price", min_value=0.0, step=0.01)
+            sale_price = st.number_input("Sale Price", min_value=0.0, step=0.01)
         
         with col2:
-            regular_price = st.number_input("Regular Price", min_value=0.0, step=0.01)
             stock_quantity = st.number_input("Stock Quantity", min_value=0)
             product_status = st.selectbox("Status", ["publish", "draft", "private"])
             hsn = st.text_input("HSN", help="Numeric only")
             zoho_name = st.text_input("Zoho Name")
             usage_units = st.text_input("Usage Units")
+            categories = st.text_input("Categories", help="Comma-separated")
         
-        categories = st.text_input("Categories", help="Comma-separated")
+        notes = st.text_area("Notes")
         
         submitted = st.form_submit_button("➕ Add Product", type="primary", use_container_width=True)
         
@@ -528,12 +531,14 @@ def show_add_product_tab(username: str):
                     'parent_product': parent_product,
                     'attribute': attribute,
                     'regular_price': float(regular_price),
+                    'sale_price': float(sale_price),
                     'stock_quantity': int(stock_quantity),
                     'product_status': product_status,
                     'hsn': hsn,
                     'zoho_name': zoho_name,
                     'usage_units': usage_units,
                     'categories': categories,
+                    'notes': notes,
                     'is_active': True
                 }
                 
