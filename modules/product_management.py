@@ -18,13 +18,22 @@ import time
 from auth.session import SessionManager
 from config.database import ActivityLogger
 
-# Import product database helper (save db_products_UPDATED.py as db_products.py in a db/ folder)
-# Or adjust the import path to match your structure
+# Import product database helper
+# Place db_products.py in the root directory with app.py
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 try:
     from db_products import ProductDB
 except ImportError:
-    st.error("⚠️ Cannot import ProductDB. Make sure db_products.py is in the correct location.")
-    st.stop()
+    try:
+        # Try alternate path
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from db_products import ProductDB
+    except ImportError:
+        st.error("⚠️ Cannot import ProductDB. Make sure db_products.py is in root folder or same folder as app.py")
+        st.stop()
 
 
 def show():
