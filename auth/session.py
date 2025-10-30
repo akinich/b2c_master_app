@@ -126,6 +126,11 @@ class SessionManager:
         return st.session_state.get('authenticated', False)
     
     @staticmethod
+    def is_logged_in() -> bool:
+        """Check if user is logged in (alias for is_authenticated)"""
+        return SessionManager.is_authenticated()
+    
+    @staticmethod
     def get_user() -> Optional[Dict]:
         """Get current user"""
         return st.session_state.get('user')
