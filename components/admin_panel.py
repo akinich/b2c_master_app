@@ -8,7 +8,7 @@ from datetime import datetime
 import secrets
 import string
 from config.database import Database, UserDB, RoleDB, ModuleDB, UserPermissionDB, ActivityLogger
-from components.session import SessionManager
+from auth.session import SessionManager
 
 def show_user_management():
     """Admin panel for managing users"""
