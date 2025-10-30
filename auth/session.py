@@ -1,9 +1,9 @@
 """
 Session management with hybrid permission system
-Admins have full access, Users have per-module permissions
+Compatible with existing login.py implementation
 """
 import streamlit as st
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from config.database import Database, UserDB, UserPermissionDB, ModuleDB, ActivityLogger
 
 
@@ -30,25 +30,42 @@ class SessionManager:
             st.session_state.current_module = None
     
     @staticmethod
-    def login(user_dict: Dict) -> bool:
+    def login(email: str, password: str) -> Tuple[bool, str]:
         """
-        Handle user login
+        Handle user login with email and password
         Args:
-            user_dict: Dict with 'id' and 'email' from Supabase auth
+            email: User's email
+            password: User's password
         Returns:
-            True if successful, False otherwise
+            Tuple of (success: bool, error_message: str)
         """
         try:
+            # Get Supabase client
+            supabase = Database.get_client()
+            
+            # Attempt to sign in with Supabase Auth
+            response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            if not response.user:
+                return False, "Invalid email or password"
+            
+            # Create user dict
+            user_dict = {
+                'id': response.user.id,
+                'email': response.user.email
+            }
+            
             # Get user profile from database
             profile = UserDB.get_user_profile(user_dict['id'])
             
             if not profile:
-                st.error("User profile not found. Please contact administrator.")
-                return False
+                return False, "User profile not found. Please contact administrator."
             
             if not profile.get('is_active', False):
-                st.error("Your account is inactive. Please contact administrator.")
-                return False
+                return False, "Your account is inactive. Please contact administrator."
             
             # Set session state
             st.session_state.authenticated = True
@@ -69,11 +86,20 @@ class SessionManager:
                 description=f"User {profile.get('full_name', user_dict['email'])} logged in"
             )
             
-            return True
+            return True, ""
             
         except Exception as e:
-            st.error(f"Login error: {str(e)}")
-            return False
+            error_message = str(e)
+            
+            # Handle specific Supabase auth errors
+            if "Invalid login credentials" in error_message:
+                return False, "Invalid email or password"
+            elif "Email not confirmed" in error_message:
+                return False, "Please verify your email address before logging in"
+            elif "User not found" in error_message:
+                return False, "No account found with this email"
+            else:
+                return False, f"Login failed: {error_message}"
     
     @staticmethod
     def _load_accessible_modules(user_id: str, profile: Dict) -> List[Dict]:
