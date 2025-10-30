@@ -5,8 +5,9 @@ PDFs are stored in Supabase Storage
 """
 import streamlit as st
 import pandas as pd
-from PyPDF2 import PdfMerger
+from PyPDF2 import PdfMerger, PdfReader, PdfWriter
 import io
+import zipfile
 from datetime import datetime
 from auth.session import SessionManager
 from config.database import Database, ActivityLogger
@@ -111,6 +112,11 @@ def show_label_generator(user, profile):
             if total_pages_expected > 200:
                 st.warning("⚠️ This will create a large PDF (>200 pages). Processing may take longer.")
             
+            # Info about file splitting
+            if total_pages_expected > 25:
+                num_files = (total_pages_expected + 24) // 25
+                st.info(f"📦 Output will be split into {num_files} file(s) of 25 pages each (delivered as zip)")
+            
             # Pre-validate PDFs
             st.markdown("---")
             st.markdown("#### 🔍 Validating PDF Availability...")
@@ -169,7 +175,9 @@ def show_label_generator(user, profile):
             - PDFs must be named: `{ID}.pdf` (e.g., `7413.pdf`)
             
             **4. Output:**
-            - Single merged PDF: `mrp_labels_{your_filename}_{timestamp}.pdf`
+            - PDFs are split into 25-page chunks
+            - If >25 pages: Multiple files zipped together (1.pdf, 2.pdf, etc.)
+            - If ≤25 pages: Single PDF file
             - Summary of processed items and missing PDFs
             
             **5. PDF Library:**
@@ -349,6 +357,42 @@ def check_pdf_availability(df):
         return {}, []
 
 
+def split_pdf_into_chunks(merged_pdf_bytes, max_pages_per_file=25):
+    """Split a merged PDF into chunks of max_pages_per_file"""
+    
+    pdf_chunks = []
+    reader = PdfReader(io.BytesIO(merged_pdf_bytes))
+    total_pages = len(reader.pages)
+    
+    chunk_num = 1
+    current_page = 0
+    
+    while current_page < total_pages:
+        writer = PdfWriter()
+        pages_in_chunk = 0
+        
+        # Add up to max_pages_per_file pages to this chunk
+        while pages_in_chunk < max_pages_per_file and current_page < total_pages:
+            writer.add_page(reader.pages[current_page])
+            pages_in_chunk += 1
+            current_page += 1
+        
+        # Write chunk to bytes
+        chunk_bytes = io.BytesIO()
+        writer.write(chunk_bytes)
+        chunk_bytes.seek(0)
+        
+        pdf_chunks.append({
+            'filename': f"{chunk_num}.pdf",
+            'data': chunk_bytes.getvalue(),
+            'pages': pages_in_chunk
+        })
+        
+        chunk_num += 1
+    
+    return pdf_chunks
+
+
 def process_and_merge_pdfs(df, excel_filename, user, available_pdfs):
     """Process the dataframe and merge PDFs"""
     
@@ -406,31 +450,61 @@ def process_and_merge_pdfs(df, excel_filename, user, available_pdfs):
         progress_bar.empty()
         status_text.empty()
         
-        # Generate output filename
+        # Generate base filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         excel_basename = excel_filename.replace('.xlsx', '').replace('.xls', '')
-        output_filename = f"mrp_labels_{excel_basename}_{timestamp}.pdf"
+        base_filename = f"mrp_labels_{excel_basename}_{timestamp}"
         
-        # Write merged PDF to bytes
+        # Process merged PDF
         if total_pages > 0:
-            pdf_output = io.BytesIO()
-            merger.write(pdf_output)
+            # Write complete merged PDF to bytes
+            complete_pdf = io.BytesIO()
+            merger.write(complete_pdf)
             merger.close()
-            pdf_output.seek(0)
+            complete_pdf.seek(0)
+            complete_pdf_bytes = complete_pdf.getvalue()
+            
+            # Split into chunks if needed
+            if total_pages > 25:
+                status_text.text("📦 Splitting PDF into chunks...")
+                pdf_chunks = split_pdf_into_chunks(complete_pdf_bytes, max_pages_per_file=25)
+                
+                # Create zip file
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for chunk in pdf_chunks:
+                        zip_file.writestr(chunk['filename'], chunk['data'])
+                
+                zip_buffer.seek(0)
+                download_data = zip_buffer.getvalue()
+                download_filename = f"{base_filename}.zip"
+                download_mime = "application/zip"
+                num_files = len(pdf_chunks)
+                total_size_mb = len(download_data) / (1024 * 1024)
+                
+                status_text.empty()
+            else:
+                # Single file
+                download_data = complete_pdf_bytes
+                download_filename = f"{base_filename}.pdf"
+                download_mime = "application/pdf"
+                num_files = 1
+                total_size_mb = len(download_data) / (1024 * 1024)
             
             # Display results
             st.success("✅ Processing Complete!")
             
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
                 st.metric("Items Processed", processed_items)
             with col2:
                 st.metric("Total Pages", total_pages)
             with col3:
-                st.metric("Missing PDFs", len(set(missing_pdfs)))
+                st.metric("Files Created", num_files)
             with col4:
-                file_size_mb = len(pdf_output.getvalue()) / (1024 * 1024)
-                st.metric("File Size", f"{file_size_mb:.1f} MB")
+                st.metric("Missing PDFs", len(set(missing_pdfs)))
+            with col5:
+                st.metric("File Size", f"{total_size_mb:.1f} MB")
             
             if missing_pdfs:
                 with st.expander(f"⚠️ {len(set(missing_pdfs))} Missing PDF(s)"):
@@ -442,11 +516,12 @@ def process_and_merge_pdfs(df, excel_filename, user, available_pdfs):
                         st.text(error)
             
             # Download button
+            download_label = "📥 Download PDF" if num_files == 1 else f"📥 Download Zip ({num_files} PDFs)"
             st.download_button(
-                label="📥 Download Merged PDF",
-                data=pdf_output,
-                file_name=output_filename,
-                mime="application/pdf",
+                label=download_label,
+                data=download_data,
+                file_name=download_filename,
+                mime=download_mime,
                 type="primary"
             )
             
@@ -455,13 +530,14 @@ def process_and_merge_pdfs(df, excel_filename, user, available_pdfs):
                 user_id=user['id'],
                 action_type='pdf_generation',
                 module_key='mrp_label_generator',
-                description=f"Successfully merged {total_pages} MRP labels",
+                description=f"Successfully merged {total_pages} MRP labels into {num_files} file(s)",
                 metadata={
                     'total_pages': total_pages,
                     'processed_items': processed_items,
+                    'num_files': num_files,
                     'missing_pdfs': len(set(missing_pdfs)),
-                    'file_size_mb': round(file_size_mb, 2),
-                    'output_filename': output_filename
+                    'file_size_mb': round(total_size_mb, 2),
+                    'output_filename': download_filename
                 }
             )
         else:
