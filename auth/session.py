@@ -4,7 +4,7 @@ UPDATED FOR HYBRID PERMISSION SYSTEM (Admin + User with module-level permissions
 """
 import streamlit as st
 from typing import Optional, Dict, List
-from config.database import UserDB, UserPermissionDB, ActivityLogger
+from config.database import Database, UserDB, UserPermissionDB, ActivityLogger
 
 class SessionManager:
     """Manages user session, authentication state, and access control"""
@@ -20,6 +20,85 @@ class SessionManager:
             st.session_state.accessible_modules = []
         if 'current_module' not in st.session_state:
             st.session_state.current_module = 'dashboard'
+    
+    @staticmethod
+    def login(email: str, password: str) -> tuple[bool, Optional[str]]:
+        """
+        Authenticate user with Supabase
+        Returns: (success: bool, error_message: Optional[str])
+        """
+        try:
+            db = Database.get_client()
+            
+            # Authenticate with Supabase
+            response = db.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            if response.user:
+                user = response.user
+                
+                # Load user profile
+                profile = UserDB.get_user_profile(user.id)
+                
+                if not profile:
+                    return False, "User profile not found. Please contact administrator."
+                
+                if not profile.get('is_active', False):
+                    return False, "Your account has been deactivated. Please contact administrator."
+                
+                # Set user in session
+                SessionManager.set_user(user.model_dump())
+                
+                # Log successful login
+                ActivityLogger.log(
+                    user_id=user.id,
+                    action_type='login',
+                    description=f"User {email} logged in successfully"
+                )
+                
+                return True, None
+            else:
+                return False, "Invalid email or password"
+                
+        except Exception as e:
+            error_msg = str(e)
+            
+            # Handle specific Supabase auth errors
+            if "Invalid login credentials" in error_msg:
+                return False, "Invalid email or password"
+            elif "Email not confirmed" in error_msg:
+                return False, "Please verify your email address before logging in"
+            elif "User not found" in error_msg:
+                return False, "No account found with this email"
+            else:
+                return False, f"Login failed: {error_msg}"
+    
+    @staticmethod
+    def logout():
+        """Log out current user"""
+        try:
+            user = SessionManager.get_user()
+            if user:
+                # Log logout activity
+                ActivityLogger.log(
+                    user_id=user['id'],
+                    action_type='logout',
+                    description=f"User {user.get('email')} logged out"
+                )
+            
+            # Sign out from Supabase
+            db = Database.get_client()
+            db.auth.sign_out()
+            
+        except Exception as e:
+            # Continue with local logout even if Supabase logout fails
+            print(f"Error during Supabase logout: {str(e)}")
+        
+        finally:
+            # Clear session state
+            SessionManager.clear_session()
     
     @staticmethod
     def is_logged_in() -> bool:
