@@ -1,6 +1,6 @@
 """
 Enhanced Dashboard with WooCommerce Order Statistics
-Displays processing, pending, cancelled, and refunded orders with counts and values
+Displays processing, pending, cancelled, refunded, completed, and on-hold orders with counts and values
 """
 import streamlit as st
 from datetime import datetime, date, timedelta
@@ -42,7 +42,7 @@ def show_dashboard():
                 )
             
             with col3:
-                st.markdown("<br>", unsafe_allow_html=True)  # Spacer
+                st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🔄 Sync Now", type="primary", use_container_width=True):
                     with st.spinner("Syncing orders..."):
                         result = WooCommerceOrderSync.sync_orders(sync_start, sync_end)
@@ -118,7 +118,7 @@ def show_dashboard():
     
     # Fetch order statistics
     with st.spinner("Loading order statistics..."):
-        statuses = ['processing', 'pending', 'cancelled', 'refunded']
+        statuses = ['processing', 'pending', 'cancelled', 'refunded', 'completed', 'on-hold']
         metrics = OrderDB.get_status_metrics(start_date, end_date, statuses)
     
     # Display Order Statistics
@@ -224,6 +224,57 @@ def show_dashboard():
             avg_value = ref_value / ref_count
             st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
     
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Row 3: Completed & On-Hold
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### ✅ Completed Orders")
+        comp_count = metrics['completed']['count']
+        comp_value = metrics['completed']['value']
+        
+        metric_col1, metric_col2 = st.columns(2)
+        with metric_col1:
+            st.metric(
+                label="Count",
+                value=f"{comp_count:,}",
+                delta=None
+            )
+        with metric_col2:
+            st.metric(
+                label="Value",
+                value=f"₹{comp_value:,.2f}",
+                delta=None
+            )
+        
+        if comp_count > 0:
+            avg_value = comp_value / comp_count
+            st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
+    
+    with col2:
+        st.markdown("#### 🟠 On-Hold Orders")
+        hold_count = metrics['on-hold']['count']
+        hold_value = metrics['on-hold']['value']
+        
+        metric_col1, metric_col2 = st.columns(2)
+        with metric_col1:
+            st.metric(
+                label="Count",
+                value=f"{hold_count:,}",
+                delta=None
+            )
+        with metric_col2:
+            st.metric(
+                label="Value",
+                value=f"₹{hold_value:,.2f}",
+                delta=None
+            )
+        
+        if hold_count > 0:
+            avg_value = hold_value / hold_count
+            st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
+    
     st.markdown("---")
     
     # Overall Summary Section
@@ -311,10 +362,12 @@ def show_dashboard():
             filter_col1, filter_col2 = st.columns(2)
             
             with filter_col1:
+                available_statuses = orders_df['order_status'].unique().tolist()
+                default_statuses = [s for s in statuses if s in available_statuses]
                 status_filter = st.multiselect(
                     "Filter by Status",
-                    options=orders_df['order_status'].unique().tolist(),
-                    default=statuses
+                    options=available_statuses,
+                    default=default_statuses
                 )
             
             with filter_col2:
