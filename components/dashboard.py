@@ -277,18 +277,11 @@ def show_dashboard():
     
     st.markdown("---")
 
-    # Toggle for Overall Summary
+    # Overall Summary Section with Toggles
     st.markdown("### 📊 Overall Summary")
 
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        st.markdown("**Include in Summary:**")
-
-    with col2:
-        pass
-
     # Checkboxes for each status
+    st.markdown("**Include in Summary:**")
     toggle_cols = st.columns(6)
 
     include_status = {}
@@ -311,32 +304,25 @@ def show_dashboard():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Calculate filtered totals
+    # Calculate filtered totals based on toggles
     filtered_metrics = {k: v for k, v in metrics.items() if include_status.get(k, True)}
     total_count = sum(m['count'] for m in filtered_metrics.values())
     total_value = sum(m['value'] for m in filtered_metrics.values())
 
-    
-    # Overall Summary Section
-    st.markdown("### 📊 Overall Summary")
-    
-    total_count = sum(m['count'] for m in metrics.values())
-    total_value = sum(m['value'] for m in metrics.values())
-    
     sum_col1, sum_col2, sum_col3, sum_col4 = st.columns(4)
-    
+
     with sum_col1:
         st.metric(
             label="Total Orders",
             value=f"{total_count:,}"
         )
-    
+
     with sum_col2:
         st.metric(
             label="Total Value",
             value=f"₹{total_value:,.2f}"
         )
-    
+
     with sum_col3:
         if total_count > 0:
             avg_order = total_value / total_count
@@ -346,7 +332,7 @@ def show_dashboard():
             )
         else:
             st.metric(label="Avg Order Value", value="₹0.00")
-    
+
     with sum_col4:
         # Calculate date range in days
         days_in_range = (end_date - start_date).days + 1
@@ -358,6 +344,7 @@ def show_dashboard():
             )
         else:
             st.metric(label="Orders/Day", value="0")
+
     
     st.markdown("---")
     
