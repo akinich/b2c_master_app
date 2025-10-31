@@ -272,9 +272,9 @@ class WooCommerceOrderSync:
         import time
         
         # Get WooCommerce credentials
-        WC_API_URL = st.secrets.get("WC_API_URL")
-        WC_CONSUMER_KEY = st.secrets.get("WC_CONSUMER_KEY")
-        WC_CONSUMER_SECRET = st.secrets.get("WC_CONSUMER_SECRET")
+        WC_API_URL = st.secrets["woocommerce"]["api_url"]
+        WC_CONSUMER_KEY = st.secrets["woocommerce"]["consumer_key"]
+        WC_CONSUMER_SECRET = st.secrets["woocommerce"]["consumer_secret"]
         
         if not all([WC_API_URL, WC_CONSUMER_KEY, WC_CONSUMER_SECRET]):
             st.error("WooCommerce API credentials missing!")
