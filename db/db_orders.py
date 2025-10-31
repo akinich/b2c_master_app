@@ -14,10 +14,12 @@ class OrderDB:
     
     @staticmethod
     def get_supabase():
-        """Get Supabase client from session state"""
+    """Get Supabase client from session state"""
         if 'supabase' not in st.session_state:
-            from config.database import Database
-            Database.initialize()
+            from supabase import create_client
+            url = st.secrets["supabase"]["url"]
+            key = st.secrets["supabase"]["service_role_key"]
+            st.session_state.supabase = create_client(url, key)
         return st.session_state.supabase
     
     @staticmethod
