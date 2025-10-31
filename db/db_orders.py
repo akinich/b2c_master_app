@@ -132,9 +132,11 @@ class OrderDB:
             supabase = OrderDB.get_supabase()
             
             # Build query
+            start_datetime = f"{start_date}T00:00:00"
+            end_datetime = f"{end_date}T23:59:59"
             query = supabase.table('woocommerce_orders_cache').select(
                 'order_status, order_id, order_total'
-            ).gte('order_date', start_date.isoformat()).lte('order_date', end_date.isoformat())
+            ).gte('order_date', start_datetime).lte('order_date', end_datetime)
             
             if status:
                 query = query.eq('order_status', status)
@@ -214,9 +216,11 @@ class OrderDB:
         try:
             supabase = OrderDB.get_supabase()
             
+            start_datetime = f"{start_date}T00:00:00"
+            end_datetime = f"{end_date}T23:59:59"
             result = supabase.table('woocommerce_orders_cache').select('*').gte(
-                'order_date', start_date.isoformat()
-            ).lte('order_date', end_date.isoformat()).order('order_date', desc=True).execute()
+                'order_date', start_datetime
+            ).lte('order_date', end_datetime).order('order_date', desc=True).execute())
             
             if result.data:
                 return pd.DataFrame(result.data)
