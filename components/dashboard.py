@@ -6,7 +6,7 @@ import streamlit as st
 from datetime import datetime, date, timedelta
 import pandas as pd
 from auth.session import SessionManager
-from db_orders import OrderDB, WooCommerceOrderSync
+from db.db_orders import OrderDB, WooCommerceOrderSync
 
 
 def show_dashboard():
