@@ -276,6 +276,46 @@ def show_dashboard():
             st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
     
     st.markdown("---")
+
+    # Toggle for Overall Summary
+    st.markdown("### 📊 Overall Summary")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.markdown("**Include in Summary:**")
+
+    with col2:
+        pass
+
+    # Checkboxes for each status
+    toggle_cols = st.columns(6)
+
+    include_status = {}
+    status_labels = {
+        'processing': '🟢 Processing',
+        'pending': '🟡 Pending',
+        'cancelled': '🔴 Cancelled',
+        'refunded': '🟣 Refunded',
+        'completed': '✅ Completed',
+        'on-hold': '🟠 On-Hold'
+    }
+
+    for idx, (status, label) in enumerate(status_labels.items()):
+        with toggle_cols[idx]:
+            include_status[status] = st.checkbox(
+                label,
+                value=True,
+                key=f"toggle_{status}"
+            )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Calculate filtered totals
+    filtered_metrics = {k: v for k, v in metrics.items() if include_status.get(k, True)}
+    total_count = sum(m['count'] for m in filtered_metrics.values())
+    total_value = sum(m['value'] for m in filtered_metrics.values())
+
     
     # Overall Summary Section
     st.markdown("### 📊 Overall Summary")
