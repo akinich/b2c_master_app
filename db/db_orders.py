@@ -220,7 +220,7 @@ class OrderDB:
             end_datetime = f"{end_date}T23:59:59"
             result = supabase.table('woocommerce_orders_cache').select('*').gte(
                 'order_date', start_datetime
-            ).lte('order_date', end_datetime).order('order_date', desc=True).execute())
+            ).lte('order_date', end_datetime).order('order_date', desc=True).execute()
             
             if result.data:
                 return pd.DataFrame(result.data)
