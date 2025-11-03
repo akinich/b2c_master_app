@@ -1,6 +1,10 @@
 """
 Database configuration and connection utilities for Supabase
 UPDATED FOR HYBRID PERMISSION SYSTEM (Admin + User with module-level permissions)
+
+VERSION HISTORY:
+1.1.0 - Added module management methods (update_module_order, create_user, get_logs) - 03/11/25
+1.0.0 - Hybrid permission system with UserPermissionDB class - 30/10/25
 """
 import streamlit as st
 from supabase import create_client, Client
@@ -124,6 +128,30 @@ class UserDB:
     def activate_user(user_id: str) -> bool:
         """Activate a user account"""
         return UserDB.update_user_profile(user_id, {'is_active': True})
+    
+    @staticmethod
+    def get_all_roles() -> List[Dict]:
+        """Get all available roles (wrapper for RoleDB)"""
+        return RoleDB.get_all_roles()
+    
+    @staticmethod
+    def create_user(email: str, full_name: str, role_id: int) -> bool:
+        """Create a new user with Supabase auth and profile"""
+        try:
+            db = Database.get_client()
+            # Create auth user via Supabase Admin API
+            response = db.auth.admin.create_user({
+                'email': email,
+                'email_confirm': True
+            })
+            
+            if response.user:
+                # Create user profile
+                return UserDB.create_user_profile(response.user.id, email, full_name, role_id)
+            return False
+        except Exception as e:
+            st.error(f"Error creating user: {str(e)}")
+            return False
 
 
 class RoleDB:
@@ -379,6 +407,11 @@ class ModuleDB:
     def toggle_module_status(module_id: int, is_active: bool) -> bool:
         """Activate or deactivate a module"""
         return ModuleDB.update_module(module_id, {'is_active': is_active})
+    
+    @staticmethod
+    def update_module_order(module_id: int, display_order: int) -> bool:
+        """Update the display order of a module"""
+        return ModuleDB.update_module(module_id, {'display_order': display_order})
 
 
 class WooCommerceDB:
@@ -608,3 +641,30 @@ class ActivityLogger:
         except Exception as e:
             st.error(f"Error fetching module activity: {str(e)}")
             return []
+    
+    @staticmethod
+    def get_logs(days: int = 7, user_id: str = None, module_key: str = None) -> List[Dict]:
+        """Get activity logs with optional filters"""
+        try:
+            db = Database.get_client()
+            query = db.table('activity_logs').select('*').order('created_at', desc=True)
+            
+            # Apply filters if provided
+            if user_id:
+                query = query.eq('user_id', user_id)
+            if module_key:
+                query = query.eq('module_key', module_key)
+            
+            # Limit by days (rough estimate: 100 logs per day)
+            query = query.limit(days * 100)
+            
+            response = query.execute()
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching activity logs: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_module_logs(module_key: str, days: int = 30) -> List[Dict]:
+        """Get recent activity for a specific module (wrapper for compatibility)"""
+        return ActivityLogger.get_module_activity(module_key, limit=days * 10)
