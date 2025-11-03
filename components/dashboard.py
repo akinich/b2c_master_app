@@ -1,454 +1,670 @@
 """
-Enhanced Dashboard with WooCommerce Order Statistics
-Displays processing, pending, cancelled, refunded, completed, and on-hold orders with counts and values
+Database configuration and connection utilities for Supabase
+UPDATED FOR HYBRID PERMISSION SYSTEM (Admin + User with module-level permissions)
+
+VERSION HISTORY:
+1.1.0 - Added module management methods (update_module_order, create_user, get_logs) - 03/11/25
+1.0.0 - Hybrid permission system with UserPermissionDB class - 30/10/25
 """
 import streamlit as st
-from datetime import datetime, date, timedelta
-import pandas as pd
-from auth.session import SessionManager
-from db.db_orders import OrderDB, WooCommerceOrderSync
+from supabase import create_client, Client
+from typing import Optional, Dict, List, Any
+import json
+
+class Database:
+    """Handles all database operations with Supabase"""
+    
+    _instance: Optional[Client] = None
+    
+    @classmethod
+    def get_client(cls) -> Client:
+        """Get or create Supabase client (singleton pattern)"""
+        if cls._instance is None:
+            try:
+                url = st.secrets["supabase"]["url"]
+                key = st.secrets["supabase"]["service_role_key"]
+                cls._instance = create_client(url, key)
+            except Exception as e:
+                st.error(f"Failed to connect to database: {str(e)}")
+                st.stop()
+        return cls._instance
+    
+    @classmethod
+    def reset_client(cls):
+        """Reset the client (useful for testing or reconnecting)"""
+        cls._instance = None
 
 
-def show_dashboard():
-    """Display enhanced dashboard with WooCommerce order statistics"""
+class UserDB:
+    """User-related database operations"""
     
-    profile = SessionManager.get_user_profile()
-    user = SessionManager.get_user()
+    @staticmethod
+    def get_user_profile(user_id: str) -> Optional[Dict]:
+        """Get user profile with role information"""
+        try:
+            db = Database.get_client()
+            response = db.table('user_details').select('*').eq('id', user_id).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            st.error(f"Error fetching user profile: {str(e)}")
+            return None
     
-    # Welcome message
-    st.markdown(f"### Welcome back, {profile.get('full_name', user.get('email'))}! 👋")
-    st.markdown("---")
+    @staticmethod
+    def get_user_modules(user_id: str) -> List[Dict]:
+        """Get all modules accessible to a user (hybrid permission check)"""
+        try:
+            db = Database.get_client()
+            # Use the new view that handles hybrid permissions
+            response = (db.table('user_accessible_modules')
+                       .select('*')
+                       .eq('user_id', user_id)
+                       .order('display_order')
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching user modules: {str(e)}")
+            return []
     
-    # Dashboard Title
-    st.markdown("## 📊 WooCommerce Order Dashboard")
+    @staticmethod
+    def create_user_profile(user_id: str, email: str, full_name: str, role_id: int) -> bool:
+        """Create a new user profile after Supabase auth registration"""
+        try:
+            db = Database.get_client()
+            data = {
+                'id': user_id,
+                'full_name': full_name,
+                'role_id': role_id,
+                'is_active': True
+            }
+            db.table('user_profiles').insert(data).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error creating user profile: {str(e)}")
+            return False
     
-    # Sync Section (for Admins only)
-    if SessionManager.is_admin():
-        with st.expander("🔄 Sync Orders from WooCommerce"):
-            col1, col2, col3 = st.columns([2, 2, 1])
-            
-            with col1:
-                sync_start = st.date_input(
-                    "Sync Start Date",
-                    value=date.today() - timedelta(days=30),
-                    key="sync_start"
-                )
-            
-            with col2:
-                sync_end = st.date_input(
-                    "Sync End Date",
-                    value=date.today(),
-                    key="sync_end"
-                )
-            
-            with col3:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🔄 Sync Now", type="primary", use_container_width=True):
-                    with st.spinner("Syncing orders..."):
-                        result = WooCommerceOrderSync.sync_orders(sync_start, sync_end)
-                        
-                        if result.get('success'):
-                            st.success(f"✅ Synced {result['synced']} orders successfully!")
-                            if result.get('errors', 0) > 0:
-                                st.warning(f"⚠️ {result['errors']} orders had errors")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Sync failed: {result.get('error', 'Unknown error')}")
-            
-            # Show last sync time
-            last_sync = OrderDB.get_last_sync_time()
-            if last_sync:
-                st.caption(f"Last synced: {last_sync.strftime('%Y-%m-%d %H:%M:%S')}")
+    @staticmethod
+    def update_user_profile(user_id: str, updates: Dict) -> bool:
+        """Update user profile information"""
+        try:
+            db = Database.get_client()
+            db.table('user_profiles').update(updates).eq('id', user_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error updating user profile: {str(e)}")
+            return False
     
-    st.markdown("---")
+    @staticmethod
+    def get_all_users() -> List[Dict]:
+        """Get all users with their profiles (for admin panel)"""
+        try:
+            db = Database.get_client()
+            response = db.table('user_details').select('*').execute()
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching all users: {str(e)}")
+            return []
     
-    # Date Selector Section
-    st.markdown("### 📅 Select Date Range")
+    @staticmethod
+    def get_non_admin_users() -> List[Dict]:
+        """Get all non-admin users (for permission management)"""
+        try:
+            db = Database.get_client()
+            response = (db.table('user_details')
+                       .select('*')
+                       .neq('role_name', 'Admin')
+                       .eq('is_active', True)
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching non-admin users: {str(e)}")
+            return []
     
-    col1, col2 = st.columns([1, 2])
+    @staticmethod
+    def deactivate_user(user_id: str) -> bool:
+        """Deactivate a user account"""
+        return UserDB.update_user_profile(user_id, {'is_active': False})
     
-    with col1:
-        # Quick select options
-        date_option = st.radio(
-            "Quick Select:",
-            options=["Today", "Yesterday", "Month to Date", "Custom Range"],
-            horizontal=False
-        )
+    @staticmethod
+    def activate_user(user_id: str) -> bool:
+        """Activate a user account"""
+        return UserDB.update_user_profile(user_id, {'is_active': True})
     
-    with col2:
-        # Calculate date range based on selection
-        if date_option == "Today":
-            start_date = date.today()
-            end_date = date.today()
-            st.info(f"📆 Showing data for: **{start_date.strftime('%B %d, %Y')}**")
-        
-        elif date_option == "Yesterday":
-            start_date = date.today() - timedelta(days=1)
-            end_date = date.today() - timedelta(days=1)
-            st.info(f"📆 Showing data for: **{start_date.strftime('%B %d, %Y')}**")
-        
-        elif date_option == "Month to Date":
-            start_date = date.today().replace(day=1)
-            end_date = date.today()
-            st.info(f"📆 Showing data from: **{start_date.strftime('%B %d')} to {end_date.strftime('%B %d, %Y')}**")
-        
-        else:  # Custom Range
-            col_start, col_end = st.columns(2)
-            with col_start:
-                start_date = st.date_input(
-                    "Start Date",
-                    value=date.today() - timedelta(days=7),
-                    max_value=date.today()
-                )
-            with col_end:
-                end_date = st.date_input(
-                    "End Date",
-                    value=date.today(),
-                    max_value=date.today()
-                )
-            
-            if start_date > end_date:
-                st.error("⚠️ Start date must be before end date!")
-                return
-            
-            days_diff = (end_date - start_date).days
-            st.info(f"📆 Showing data for: **{days_diff + 1} days** ({start_date.strftime('%b %d')} - {end_date.strftime('%b %d, %Y')})")
+    @staticmethod
+    def get_all_roles() -> List[Dict]:
+        """Get all available roles (wrapper for RoleDB)"""
+        return RoleDB.get_all_roles()
     
-    st.markdown("---")
-    
-    # Fetch order statistics
-    with st.spinner("Loading order statistics..."):
-        statuses = ['processing', 'pending', 'cancelled', 'refunded', 'completed', 'on-hold']
-        metrics = OrderDB.get_status_metrics(start_date, end_date, statuses)
-    
-    # Display Order Statistics
-    st.markdown("### 📈 Order Statistics")
-    
-    # Row 1: Processing & Pending
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### 🟢 Processing Orders")
-        proc_count = metrics['processing']['count']
-        proc_value = metrics['processing']['value']
-        
-        metric_col1, metric_col2 = st.columns(2)
-        with metric_col1:
-            st.metric(
-                label="Count",
-                value=f"{proc_count:,}",
-                delta=None
-            )
-        with metric_col2:
-            st.metric(
-                label="Value",
-                value=f"₹{proc_value:,.2f}",
-                delta=None
-            )
-        
-        if proc_count > 0:
-            avg_value = proc_value / proc_count
-            st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
-    
-    with col2:
-        st.markdown("#### 🟡 Pending Payment Orders")
-        pend_count = metrics['pending']['count']
-        pend_value = metrics['pending']['value']
-        
-        metric_col1, metric_col2 = st.columns(2)
-        with metric_col1:
-            st.metric(
-                label="Count",
-                value=f"{pend_count:,}",
-                delta=None
-            )
-        with metric_col2:
-            st.metric(
-                label="Value",
-                value=f"₹{pend_value:,.2f}",
-                delta=None
-            )
-        
-        if pend_count > 0:
-            avg_value = pend_value / pend_count
-            st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Row 2: Cancelled & Refunded
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### 🔴 Cancelled Orders")
-        canc_count = metrics['cancelled']['count']
-        canc_value = metrics['cancelled']['value']
-        
-        metric_col1, metric_col2 = st.columns(2)
-        with metric_col1:
-            st.metric(
-                label="Count",
-                value=f"{canc_count:,}",
-                delta=None
-            )
-        with metric_col2:
-            st.metric(
-                label="Value",
-                value=f"₹{canc_value:,.2f}",
-                delta=None
-            )
-        
-        if canc_count > 0:
-            avg_value = canc_value / canc_count
-            st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
-    
-    with col2:
-        st.markdown("#### 🟣 Refunded Orders")
-        ref_count = metrics['refunded']['count']
-        ref_value = metrics['refunded']['value']
-        
-        metric_col1, metric_col2 = st.columns(2)
-        with metric_col1:
-            st.metric(
-                label="Count",
-                value=f"{ref_count:,}",
-                delta=None
-            )
-        with metric_col2:
-            st.metric(
-                label="Value",
-                value=f"₹{ref_value:,.2f}",
-                delta=None
-            )
-        
-        if ref_count > 0:
-            avg_value = ref_value / ref_count
-            st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Row 3: Completed & On-Hold
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### ✅ Completed Orders")
-        comp_count = metrics['completed']['count']
-        comp_value = metrics['completed']['value']
-        
-        metric_col1, metric_col2 = st.columns(2)
-        with metric_col1:
-            st.metric(
-                label="Count",
-                value=f"{comp_count:,}",
-                delta=None
-            )
-        with metric_col2:
-            st.metric(
-                label="Value",
-                value=f"₹{comp_value:,.2f}",
-                delta=None
-            )
-        
-        if comp_count > 0:
-            avg_value = comp_value / comp_count
-            st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
-    
-    with col2:
-        st.markdown("#### 🟠 On-Hold Orders")
-        hold_count = metrics['on-hold']['count']
-        hold_value = metrics['on-hold']['value']
-        
-        metric_col1, metric_col2 = st.columns(2)
-        with metric_col1:
-            st.metric(
-                label="Count",
-                value=f"{hold_count:,}",
-                delta=None
-            )
-        with metric_col2:
-            st.metric(
-                label="Value",
-                value=f"₹{hold_value:,.2f}",
-                delta=None
-            )
-        
-        if hold_count > 0:
-            avg_value = hold_value / hold_count
-            st.caption(f"Avg Order Value: ₹{avg_value:,.2f}")
-    
-    st.markdown("---")
-
-    # Overall Summary Section with Toggles
-    st.markdown("### 📊 Overall Summary")
-
-    # Checkboxes for each status
-    st.markdown("**Include in Summary:**")
-    toggle_cols = st.columns(6)
-
-    include_status = {}
-    status_labels = {
-        'processing': '🟢 Processing',
-        'pending': '🟡 Pending',
-        'cancelled': '🔴 Cancelled',
-        'refunded': '🟣 Refunded',
-        'completed': '✅ Completed',
-        'on-hold': '🟠 On-Hold'
-    }
-
-    for idx, (status, label) in enumerate(status_labels.items()):
-        with toggle_cols[idx]:
-            include_status[status] = st.checkbox(
-                label,
-                value=True,
-                key=f"toggle_{status}"
-            )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Calculate filtered totals based on toggles
-    filtered_metrics = {k: v for k, v in metrics.items() if include_status.get(k, True)}
-    total_count = sum(m['count'] for m in filtered_metrics.values())
-    total_value = sum(m['value'] for m in filtered_metrics.values())
-
-    sum_col1, sum_col2, sum_col3, sum_col4 = st.columns(4)
-
-    with sum_col1:
-        st.metric(
-            label="Total Orders",
-            value=f"{total_count:,}"
-        )
-
-    with sum_col2:
-        st.metric(
-            label="Total Value",
-            value=f"₹{total_value:,.2f}"
-        )
-
-    with sum_col3:
-        if total_count > 0:
-            avg_order = total_value / total_count
-            st.metric(
-                label="Avg Order Value",
-                value=f"₹{avg_order:,.2f}"
-            )
-        else:
-            st.metric(label="Avg Order Value", value="₹0.00")
-
-    with sum_col4:
-        # Calculate date range in days
-        days_in_range = (end_date - start_date).days + 1
-        if days_in_range > 0:
-            orders_per_day = total_count / days_in_range
-            st.metric(
-                label="Orders/Day",
-                value=f"{orders_per_day:.1f}"
-            )
-        else:
-            st.metric(label="Orders/Day", value="0")
-
-    
-    st.markdown("---")
-    
-    # Comparison Table (if more than one time period shown)
-    if date_option != "Custom Range":
-        st.markdown("### 📊 Quick Comparison View")
-        
-        # Get metrics for all three periods
-        today_metrics = OrderDB.get_status_metrics(date.today(), date.today(), statuses)
-        yesterday_metrics = OrderDB.get_status_metrics(
-            date.today() - timedelta(days=1),
-            date.today() - timedelta(days=1),
-            statuses
-        )
-        mtd_start = date.today().replace(day=1)
-        mtd_metrics = OrderDB.get_status_metrics(mtd_start, date.today(), statuses)
-        
-        # Create comparison DataFrame
-        comparison_data = []
-        for status in statuses:
-            comparison_data.append({
-                'Status': status.title(),
-                'Today Count': today_metrics[status]['count'],
-                'Today Value': f"₹{today_metrics[status]['value']:,.2f}",
-                'Yesterday Count': yesterday_metrics[status]['count'],
-                'Yesterday Value': f"₹{yesterday_metrics[status]['value']:,.2f}",
-                'MTD Count': mtd_metrics[status]['count'],
-                'MTD Value': f"₹{mtd_metrics[status]['value']:,.2f}"
+    @staticmethod
+    def create_user(email: str, full_name: str, role_id: int) -> bool:
+        """Create a new user with Supabase auth and profile"""
+        try:
+            db = Database.get_client()
+            # Create auth user via Supabase Admin API
+            response = db.auth.admin.create_user({
+                'email': email,
+                'email_confirm': True
             })
-        
-        comparison_df = pd.DataFrame(comparison_data)
-        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+            
+            if response.user:
+                # Create user profile
+                return UserDB.create_user_profile(response.user.id, email, full_name, role_id)
+            return False
+        except Exception as e:
+            st.error(f"Error creating user: {str(e)}")
+            return False
+
+
+class RoleDB:
+    """Role and permission related database operations"""
     
-    st.markdown("---")
+    @staticmethod
+    def get_all_roles() -> List[Dict]:
+        """Get all available roles (should only be Admin and User now)"""
+        try:
+            db = Database.get_client()
+            response = (db.table('roles')
+                       .select('*')
+                       .in_('role_name', ['Admin', 'User'])
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching roles: {str(e)}")
+            return []
     
-    # Detailed Orders View (Optional - Expandable)
-    with st.expander("📋 View Detailed Orders"):
-        orders_df = OrderDB.get_orders_by_date_range(start_date, end_date)
-        
-        if not orders_df.empty:
-            # Filter options
-            filter_col1, filter_col2 = st.columns(2)
+    @staticmethod
+    def get_role_permissions(role_id: int) -> List[Dict]:
+        """Get all module permissions for a role (Admin only now)"""
+        try:
+            db = Database.get_client()
+            response = (db.table('role_permissions')
+                       .select('*, modules(*)')
+                       .eq('role_id', role_id)
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching role permissions: {str(e)}")
+            return []
+    
+    @staticmethod
+    def update_role_permission(role_id: int, module_id: int, can_access: bool) -> bool:
+        """Update permission for a role-module combination (Admin only)"""
+        try:
+            db = Database.get_client()
+            # Try to update first
+            response = (db.table('role_permissions')
+                       .update({'can_access': can_access})
+                       .eq('role_id', role_id)
+                       .eq('module_id', module_id)
+                       .execute())
             
-            with filter_col1:
-                available_statuses = orders_df['order_status'].unique().tolist()
-                default_statuses = [s for s in statuses if s in available_statuses]
-                status_filter = st.multiselect(
-                    "Filter by Status",
-                    options=available_statuses,
-                    default=default_statuses
-                )
+            # If no rows affected, insert new permission
+            if not response.data:
+                db.table('role_permissions').insert({
+                    'role_id': role_id,
+                    'module_id': module_id,
+                    'can_access': can_access
+                }).execute()
             
-            with filter_col2:
-                sort_by = st.selectbox(
-                    "Sort by",
-                    options=['Order Date (Newest)', 'Order Date (Oldest)', 'Value (High to Low)', 'Value (Low to High)']
-                )
+            return True
+        except Exception as e:
+            st.error(f"Error updating role permission: {str(e)}")
+            return False
+
+
+class UserPermissionDB:
+    """User-specific module permission operations (NEW FOR HYBRID SYSTEM)"""
+    
+    @staticmethod
+    def get_user_permissions(user_id: str) -> List[Dict]:
+        """Get all module permissions for a specific user"""
+        try:
+            db = Database.get_client()
+            response = (db.table('user_module_permissions')
+                       .select('*, modules(*)')
+                       .eq('user_id', user_id)
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching user permissions: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_user_permissions_detail(user_id: str) -> List[Dict]:
+        """Get detailed permission info for a user (includes all modules)"""
+        try:
+            db = Database.get_client()
+            response = (db.table('user_permissions_detail')
+                       .select('*')
+                       .eq('user_id', user_id)
+                       .order('display_order')
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching user permissions detail: {str(e)}")
+            return []
+    
+    @staticmethod
+    def update_user_permission(user_id: str, module_id: int, can_access: bool, 
+                              granted_by: str) -> bool:
+        """Grant or revoke module access for a user"""
+        try:
+            db = Database.get_client()
             
-            # Apply filters
-            filtered_df = orders_df[orders_df['order_status'].isin(status_filter)]
-            
-            # Apply sorting
-            if sort_by == 'Order Date (Newest)':
-                filtered_df = filtered_df.sort_values('order_date', ascending=False)
-            elif sort_by == 'Order Date (Oldest)':
-                filtered_df = filtered_df.sort_values('order_date', ascending=True)
-            elif sort_by == 'Value (High to Low)':
-                filtered_df = filtered_df.sort_values('order_total', ascending=False)
+            if can_access:
+                # Grant access - upsert
+                data = {
+                    'user_id': user_id,
+                    'module_id': module_id,
+                    'can_access': True,
+                    'granted_by': granted_by
+                }
+                db.table('user_module_permissions').upsert(
+                    data,
+                    on_conflict='user_id,module_id'
+                ).execute()
             else:
-                filtered_df = filtered_df.sort_values('order_total', ascending=True)
+                # Revoke access - delete the permission row
+                db.table('user_module_permissions').delete().match({
+                    'user_id': user_id,
+                    'module_id': module_id
+                }).execute()
             
-            # Display selected columns
-            display_cols = ['order_id', 'order_number', 'order_date', 'order_status', 'order_total', 
-                          'customer_name', 'customer_email', 'total_items']
-            
-            if all(col in filtered_df.columns for col in display_cols):
-                display_df = filtered_df[display_cols].copy()
-                display_df['order_date'] = pd.to_datetime(display_df['order_date']).dt.strftime('%Y-%m-%d %H:%M')
-                display_df.columns = ['ID', 'Order #', 'Date', 'Status', 'Total', 'Customer', 'Email', 'Items']
-                
-                st.dataframe(
-                    display_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    height=400
-                )
-                
-                # Export option
-                if st.button("📥 Export to CSV"):
-                    csv = display_df.to_csv(index=False)
-                    st.download_button(
-                        label="Download CSV",
-                        data=csv,
-                        file_name=f"orders_{start_date}_{end_date}.csv",
-                        mime="text/csv"
-                    )
-            else:
-                st.info("Some columns are missing from the data.")
-        else:
-            st.info("No orders found for the selected date range.")
+            return True
+        except Exception as e:
+            st.error(f"Error updating user permission: {str(e)}")
+            return False
     
-    # Footer with refresh button
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("🔄 Refresh Data", use_container_width=True):
-            st.rerun()
+    @staticmethod
+    def bulk_update_user_permissions(user_id: str, module_ids: List[int], 
+                                    granted_by: str) -> bool:
+        """Set all permissions for a user at once (replaces existing)"""
+        try:
+            db = Database.get_client()
+            
+            # Delete all existing permissions for this user
+            db.table('user_module_permissions').delete().eq('user_id', user_id).execute()
+            
+            # Insert new permissions
+            if module_ids:
+                permissions = [
+                    {
+                        'user_id': user_id,
+                        'module_id': module_id,
+                        'can_access': True,
+                        'granted_by': granted_by
+                    }
+                    for module_id in module_ids
+                ]
+                db.table('user_module_permissions').insert(permissions).execute()
+            
+            return True
+        except Exception as e:
+            st.error(f"Error bulk updating user permissions: {str(e)}")
+            return False
+    
+    @staticmethod
+    def get_all_user_permissions() -> List[Dict]:
+        """Get permissions for all users (admin panel overview)"""
+        try:
+            db = Database.get_client()
+            response = (db.table('user_permissions_detail')
+                       .select('*')
+                       .order('email', 'display_order')
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching all user permissions: {str(e)}")
+            return []
+    
+    @staticmethod
+    def has_module_access(user_id: str, module_key: str) -> bool:
+        """Check if a specific user has access to a specific module"""
+        try:
+            db = Database.get_client()
+            
+            # Check if user is admin
+            user_profile = UserDB.get_user_profile(user_id)
+            if user_profile and user_profile.get('role_name') == 'Admin':
+                return True
+            
+            # Check user_accessible_modules view
+            response = (db.table('user_accessible_modules')
+                       .select('module_key')
+                       .eq('user_id', user_id)
+                       .eq('module_key', module_key)
+                       .execute())
+            
+            return len(response.data) > 0 if response.data else False
+        except Exception as e:
+            st.error(f"Error checking module access: {str(e)}")
+            return False
+
+
+class ModuleDB:
+    """Module related database operations"""
+    
+    @staticmethod
+    def get_all_modules() -> List[Dict]:
+        """Get all available modules"""
+        try:
+            db = Database.get_client()
+            response = (db.table('modules')
+                       .select('*')
+                       .order('display_order')
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching modules: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_active_modules() -> List[Dict]:
+        """Get all active modules"""
+        try:
+            db = Database.get_client()
+            response = (db.table('modules')
+                       .select('*')
+                       .eq('is_active', True)
+                       .order('display_order')
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching active modules: {str(e)}")
+            return []
+    
+    @staticmethod
+    def add_module(module_name: str, module_key: str, description: str, 
+                   icon: str = '⚙️', display_order: int = 99) -> bool:
+        """Add a new module to the system"""
+        try:
+            db = Database.get_client()
+            data = {
+                'module_name': module_name,
+                'module_key': module_key,
+                'description': description,
+                'icon': icon,
+                'display_order': display_order,
+                'is_active': True
+            }
+            db.table('modules').insert(data).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error adding module: {str(e)}")
+            return False
+    
+    @staticmethod
+    def update_module(module_id: int, updates: Dict) -> bool:
+        """Update module information"""
+        try:
+            db = Database.get_client()
+            db.table('modules').update(updates).eq('id', module_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error updating module: {str(e)}")
+            return False
+    
+    @staticmethod
+    def toggle_module_status(module_id: int, is_active: bool) -> bool:
+        """Activate or deactivate a module"""
+        return ModuleDB.update_module(module_id, {'is_active': is_active})
+    
+    @staticmethod
+    def update_module_order(module_id: int, display_order: int) -> bool:
+        """Update the display order of a module"""
+        return ModuleDB.update_module(module_id, {'display_order': display_order})
+
+
+class WooCommerceDB:
+    """WooCommerce product tracking database operations"""
+    
+    @staticmethod
+    def get_all_products() -> List[Dict]:
+        """Get all WooCommerce products from database"""
+        try:
+            db = Database.get_client()
+            response = db.table('woocommerce_products').select('*').execute()
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching WooCommerce products: {str(e)}")
+            return []
+    
+    @staticmethod
+    def add_product(product_id: int, product_name: str = None, product_type: str = 'simple',
+                   parent_id: int = None, sku: str = None, created_by: str = None) -> bool:
+        """Add or update product in tracking"""
+        try:
+            db = Database.get_client()
+            db.rpc('add_woocommerce_product', {
+                'p_product_id': product_id,
+                'p_product_name': product_name,
+                'p_product_type': product_type,
+                'p_parent_id': parent_id,
+                'p_sku': sku,
+                'p_created_by': created_by
+            }).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error adding product: {str(e)}")
+            return False
+    
+    @staticmethod
+    def bulk_add_products(products: List[Dict]) -> int:
+        """Add multiple products at once"""
+        try:
+            db = Database.get_client()
+            data = []
+            for p in products:
+                data.append({
+                    'product_id': p['product_id'],
+                    'product_name': p.get('product_name'),
+                    'product_type': p.get('product_type', 'simple'),
+                    'parent_id': p.get('parent_id'),
+                    'sku': p.get('sku'),
+                    'created_by': p.get('created_by')
+                })
+            
+            response = db.table('woocommerce_products').upsert(
+                data,
+                on_conflict='product_id'
+            ).execute()
+            return len(response.data) if response.data else 0
+        except Exception as e:
+            st.error(f"Error bulk adding products: {str(e)}")
+            return 0
+    
+    @staticmethod
+    def deactivate_product(product_id: int) -> bool:
+        """Mark product as inactive"""
+        try:
+            db = Database.get_client()
+            db.table('woocommerce_products').update({
+                'is_active': False
+            }).eq('product_id', product_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error deactivating product: {str(e)}")
+            return False
+    
+    @staticmethod
+    def activate_product(product_id: int) -> bool:
+        """Mark product as active"""
+        try:
+            db = Database.get_client()
+            db.table('woocommerce_products').update({
+                'is_active': True
+            }).eq('product_id', product_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error activating product: {str(e)}")
+            return False
+    
+    @staticmethod
+    def log_update(product_id: int, parent_id: int, product_name: str, update_type: str,
+                  old_regular: float = None, old_sale: float = None, old_stock: int = None,
+                  new_regular: float = None, new_sale: float = None, new_stock: int = None,
+                  success: bool = True, error_msg: str = None, api_code: int = None,
+                  updated_by: str = None) -> bool:
+        """Log price/stock update"""
+        try:
+            db = Database.get_client()
+            db.rpc('log_woocommerce_update', {
+                'p_product_id': product_id,
+                'p_parent_id': parent_id,
+                'p_product_name': product_name,
+                'p_update_type': update_type,
+                'p_old_regular_price': old_regular,
+                'p_old_sale_price': old_sale,
+                'p_old_stock': old_stock,
+                'p_new_regular_price': new_regular,
+                'p_new_sale_price': new_sale,
+                'p_new_stock': new_stock,
+                'p_success': success,
+                'p_error_message': error_msg,
+                'p_api_code': api_code,
+                'p_updated_by': updated_by
+            }).execute()
+            return True
+        except Exception as e:
+            print(f"Error logging update: {str(e)}")
+            return False
+    
+    @staticmethod
+    def get_update_history(limit: int = 100) -> List[Dict]:
+        """Get recent update history"""
+        try:
+            db = Database.get_client()
+            response = (db.from_('woocommerce_recent_updates')
+                       .select('*')
+                       .limit(limit)
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching update history: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_validation_rules() -> Dict:
+        """Get validation rules as dictionary"""
+        try:
+            db = Database.get_client()
+            response = (db.table('woocommerce_validation_rules')
+                       .select('*')
+                       .eq('is_active', True)
+                       .execute())
+            
+            if response.data:
+                rules = {}
+                for rule in response.data:
+                    rules[rule['rule_type']] = float(rule['rule_value'])
+                return rules
+            return {
+                'price_min': 0.01,
+                'price_max': 100000.00,
+                'stock_min': 0,
+                'stock_max': 10000
+            }
+        except Exception as e:
+            st.error(f"Error fetching validation rules: {str(e)}")
+            return {
+                'price_min': 0.01,
+                'price_max': 100000.00,
+                'stock_min': 0,
+                'stock_max': 10000
+            }
+
+
+class ActivityLogger:
+    """Activity logging database operations"""
+    
+    @staticmethod
+    def log(user_id: str, action_type: str, module_key: str = None, 
+            description: str = None, metadata: Dict = None, success: bool = True) -> bool:
+        """Log user activity"""
+        try:
+            db = Database.get_client()
+            db.rpc('log_activity', {
+                'p_user_id': user_id,
+                'p_action_type': action_type,
+                'p_module_key': module_key,
+                'p_description': description,
+                'p_metadata': json.dumps(metadata) if metadata else None
+            }).execute()
+            return True
+        except Exception as e:
+            # Don't show error to user for logging failures
+            print(f"Error logging activity: {str(e)}")
+            return False
+    
+    @staticmethod
+    def get_user_activity(user_id: str, limit: int = 50) -> List[Dict]:
+        """Get recent activity for a specific user"""
+        try:
+            db = Database.get_client()
+            response = (db.table('activity_logs')
+                       .select('*')
+                       .eq('user_id', user_id)
+                       .order('created_at', desc=True)
+                       .limit(limit)
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching activity logs: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_all_activity(limit: int = 100) -> List[Dict]:
+        """Get recent activity for all users (admin only)"""
+        try:
+            db = Database.get_client()
+            response = (db.table('activity_logs')
+                       .select('*')
+                       .order('created_at', desc=True)
+                       .limit(limit)
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching activity logs: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_module_activity(module_key: str, limit: int = 50) -> List[Dict]:
+        """Get recent activity for a specific module"""
+        try:
+            db = Database.get_client()
+            response = (db.table('activity_logs')
+                       .select('*')
+                       .eq('module_key', module_key)
+                       .order('created_at', desc=True)
+                       .limit(limit)
+                       .execute())
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching module activity: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_logs(days: int = 7, user_id: str = None, module_key: str = None) -> List[Dict]:
+        """Get activity logs with optional filters"""
+        try:
+            db = Database.get_client()
+            query = db.table('activity_logs').select('*').order('created_at', desc=True)
+            
+            # Apply filters if provided
+            if user_id:
+                query = query.eq('user_id', user_id)
+            if module_key:
+                query = query.eq('module_key', module_key)
+            
+            # Limit by days (rough estimate: 100 logs per day)
+            query = query.limit(days * 100)
+            
+            response = query.execute()
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"Error fetching activity logs: {str(e)}")
+            return []
+    
+    @staticmethod
+    def get_module_logs(module_key: str, days: int = 30) -> List[Dict]:
+        """Get recent activity for a specific module (wrapper for compatibility)"""
+        return ActivityLogger.get_module_activity(module_key, limit=days * 10)
