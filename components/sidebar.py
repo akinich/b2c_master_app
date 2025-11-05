@@ -1,5 +1,9 @@
 """
 Sidebar navigation component
+
+VERSION HISTORY:
+1.1.0 - Added filtering to hide inactive modules from sidebar - 03/11/25
+1.0.0 - Initial sidebar with module navigation and admin panel - 30/10/25
 """
 import streamlit as st
 from auth.session import SessionManager
@@ -14,6 +18,10 @@ def show_sidebar():
         
         # Get user's accessible modules
         modules = SessionManager.get_accessible_modules()
+        
+        # Filter out inactive modules
+        active_modules = [m for m in modules if m.get('is_active', True)]
+        
         current_module = SessionManager.get_current_module()
         
         # Dashboard home button
@@ -25,9 +33,9 @@ def show_sidebar():
         st.markdown("---")
         st.markdown("### 📦 Modules")
         
-        # Display accessible modules
-        if modules:
-            for module in modules:
+        # Display accessible modules (only active ones)
+        if active_modules:
+            for module in active_modules:
                 module_key = module['module_key']
                 module_name = module['module_name']
                 icon = module.get('icon', '⚙️')
@@ -56,7 +64,7 @@ def show_sidebar():
                 st.session_state.current_module = 'admin_users'
                 st.rerun()
             
-            if st.button("🔐 Role Permissions", use_container_width=True,
+            if st.button("🔐 User Permissions", use_container_width=True,
                         type="primary" if current_module == 'admin_permissions' else "secondary"):
                 st.session_state.current_module = 'admin_permissions'
                 st.rerun()
@@ -91,7 +99,7 @@ def show_module_breadcrumb():
         # Check if it's an admin module
         admin_modules = {
             'admin_users': ('👥', 'User Management'),
-            'admin_permissions': ('🔐', 'Role Permissions'),
+            'admin_permissions': ('🔐', 'User Permissions'),
             'admin_logs': ('📋', 'Activity Logs'),
             'admin_modules': ('📦', 'Module Management')
         }
@@ -104,3 +112,4 @@ def show_module_breadcrumb():
     else:
         st.markdown("## 🏠 Dashboard")
         st.markdown("---")
+
