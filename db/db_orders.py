@@ -1,6 +1,16 @@
 """
 Database helper functions for WooCommerce Orders Cache
 Handles syncing orders from WooCommerce API and querying cached data
+
+VERSION HISTORY:
+1.0.0 - Order caching and statistics with WooCommerce sync - 11/11/25
+KEY FUNCTIONS:
+- Upsert orders to cache (woocommerce_orders_cache table)
+- Batch sync from WooCommerce API with pagination
+- Order summary statistics by status
+- Status metrics (processing, pending, cancelled, etc.)
+- Date range filtering and order history
+- Cache cleanup for old orders (90+ days)
 """
 import streamlit as st
 from datetime import datetime, date, timedelta

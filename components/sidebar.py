@@ -25,7 +25,7 @@ def show_sidebar():
         current_module = SessionManager.get_current_module()
         
         # Dashboard home button
-        if st.button("🏠 Dashboard", use_container_width=True, 
+        if st.button("🏠 Dashboard", width='stretch', 
                     type="primary" if current_module is None else "secondary"):
             st.session_state.current_module = None
             st.rerun()
@@ -46,7 +46,7 @@ def show_sidebar():
                 if st.button(
                     f"{icon} {module_name}",
                     key=f"nav_{module_key}",
-                    use_container_width=True,
+                    width='stretch',
                     type=button_type
                 ):
                     SessionManager.set_current_module(module_key)
@@ -59,22 +59,22 @@ def show_sidebar():
             st.markdown("---")
             st.markdown("### ⚙️ Administration")
             
-            if st.button("👥 User Management", use_container_width=True,
+            if st.button("👥 User Management", width='stretch',
                         type="primary" if current_module == 'admin_users' else "secondary"):
                 st.session_state.current_module = 'admin_users'
                 st.rerun()
             
-            if st.button("🔐 User Permissions", use_container_width=True,
+            if st.button("🔐 User Permissions", width='stretch',
                         type="primary" if current_module == 'admin_permissions' else "secondary"):
                 st.session_state.current_module = 'admin_permissions'
                 st.rerun()
             
-            if st.button("📋 Activity Logs", use_container_width=True,
+            if st.button("📋 Activity Logs", width='stretch',
                         type="primary" if current_module == 'admin_logs' else "secondary"):
                 st.session_state.current_module = 'admin_logs'
                 st.rerun()
             
-            if st.button("📦 Module Management", use_container_width=True,
+            if st.button("📦 Module Management", width='stretch',
                         type="primary" if current_module == 'admin_modules' else "secondary"):
                 st.session_state.current_module = 'admin_modules'
                 st.rerun()

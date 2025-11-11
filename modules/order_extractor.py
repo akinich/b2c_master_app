@@ -1,6 +1,16 @@
 """
 Order Extractor Module
 Fetch orders from WooCommerce between dates and export to Excel
+
+VERSION HISTORY:
+1.0.0 - WooCommerce order extractor with Excel export - 11/11/25
+KEY FUNCTIONS:
+- Fetch orders from WooCommerce API with date filters (max 31 days)
+- Pagination support (100 orders per page)
+- Selectable orders with persistent checkboxes
+- Two-sheet Excel export (Orders + Item Summary)
+- Rate limiting and retry logic
+- Activity logging for audit trail
 """
 import streamlit as st
 import pandas as pd
@@ -132,7 +142,7 @@ def show():
                     required=False
                 )
             },
-            use_container_width=True,
+            width='stretch',
             key="order_extractor_orders_table"
         )
         

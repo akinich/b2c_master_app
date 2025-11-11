@@ -2,6 +2,16 @@
 Template for creating new modules
 Copy this file and rename it to match your module_key
 Example: order_extractor.py, shipping_label_generator.py, etc.
+
+VERSION HISTORY:
+1.0.0 - Module template with best practices - 11/11/25
+KEY FUNCTIONS:
+- Module access control with require_module_access
+- File upload and validation example
+- Error handling and activity logging
+- Download button integration
+- User info and profile access
+- Help section with expandable instructions
 """
 import streamlit as st
 import pandas as pd
@@ -47,7 +57,7 @@ def show():
             
             # Display preview
             with st.expander("Preview Data"):
-                st.dataframe(df.head(10), use_container_width=True)
+                st.dataframe(df.head(10), width='stretch')
             
             # Your processing logic here
             st.markdown("---")

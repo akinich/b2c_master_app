@@ -1,6 +1,14 @@
 """
 Main application entry point
 Multi-App Dashboard with Authentication and Role-Based Access
+
+VERSION HISTORY:
+1.0.0 - Initial multi-app dashboard with role-based access - 11/11/25
+KEY FUNCTIONS:
+- Dynamic module loading with require_access checks
+- Sidebar navigation with admin panel
+- User authentication and session management
+- Breadcrumb navigation
 """
 import streamlit as st
 from auth import SessionManager, show_login_page, show_logout_button, show_user_info
