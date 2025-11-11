@@ -2,6 +2,17 @@
 MRP Label PDF Merger Module
 Merges multiple product label PDFs based on Excel quantity data
 PDFs are stored in Supabase Storage
+
+VERSION HISTORY:
+1.0.0 - MRP label PDF merger with cloud storage - 11/11/25
+KEY FUNCTIONS:
+- Merge product label PDFs based on Excel quantity sheet
+- Smart ID matching (variation_id or product_id)
+- PDF library management (upload, delete, list)
+- Auto-split output into 25-page chunks
+- ZIP packaging for multi-file exports
+- Supabase Storage integration
+- Missing PDF validation and reporting
 """
 import streamlit as st
 import pandas as pd
@@ -84,7 +95,7 @@ def show_label_generator(user, profile):
             
             # Show preview
             with st.expander("👀 Preview Data"):
-                st.dataframe(df.head(10), use_container_width=True)
+                st.dataframe(df.head(10), width='stretch')
             
             # Validate and normalize columns
             df_cleaned = validate_and_clean_dataframe(df)
@@ -235,7 +246,7 @@ def show_pdf_management(user, profile):
             df_pdfs = pd.DataFrame(pdf_data)
             
             st.write(f"**Total PDFs:** {len(df_pdfs)}")
-            st.dataframe(df_pdfs, use_container_width=True, hide_index=True)
+            st.dataframe(df_pdfs, width='stretch', hide_index=True)
             
             # Delete functionality
             st.markdown("---")

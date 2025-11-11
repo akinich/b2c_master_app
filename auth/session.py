@@ -1,6 +1,17 @@
 """
 Session management with hybrid permission system
 Compatible with existing login.py implementation
+
+VERSION HISTORY:
+1.0.0 - Hybrid permission system with role-based and user-specific access - 11/11/25
+KEY FUNCTIONS:
+- Supabase Auth integration (sign in/sign out)
+- Hybrid permissions (Admin: all modules, User: custom access)
+- Module access validation (has_module_access, require_module_access)
+- Role checks (is_admin, is_manager)
+- Session state management
+- Activity logging for login/logout
+- Profile and user info access
 """
 import streamlit as st
 from typing import Dict, List, Optional, Tuple

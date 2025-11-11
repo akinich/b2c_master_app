@@ -3,6 +3,16 @@ woocommerce_zoho_export.py
 
 Module Key: woocommerce_zoho_export
 
+VERSION HISTORY:
+1.0.0 - WooCommerce to Zoho export with product mapping - 11/11/25
+KEY FUNCTIONS:
+- Fetch completed orders from WooCommerce API with pagination
+- Map product names using database (woocommerce_products table)
+- Generate invoice numbers with sequence tracking
+- Export CSV (line items) + Excel (summary) as ZIP
+- Track export history with order totals
+- Handle rate limiting and API retries
+
 Fetch completed orders from WooCommerce between dates,
 map item names using product database (woocommerce_products table),
 then export line-item CSV + summary Excel bundled into orders_export.zip.
@@ -621,11 +631,11 @@ def show_export_tab():
         df = pd.DataFrame(csv_rows)
         
         st.subheader("📊 Line Items Preview (first 50 rows)")
-        st.dataframe(df.head(50), use_container_width=True)
+        st.dataframe(df.head(50), width='stretch')
 
         if replacements_log:
             st.subheader("🔄 Product Name Replacements")
-            st.dataframe(pd.DataFrame(replacements_log), use_container_width=True)
+            st.dataframe(pd.DataFrame(replacements_log), width='stretch')
             append_log(f"Applied {len(replacements_log)} product replacements", "info")
 
         # Summary
@@ -634,7 +644,7 @@ def show_export_tab():
         )
         
         st.subheader("📈 Summary Metrics")
-        st.dataframe(summary_df, use_container_width=True)
+        st.dataframe(summary_df, width='stretch')
 
         # Prepare export files
         try:
@@ -755,7 +765,7 @@ def show_history_tab():
     # Display table
     st.dataframe(
         display_df,
-        use_container_width=True,
+        width='stretch',
         height=400
     )
 

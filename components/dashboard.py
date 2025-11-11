@@ -1,6 +1,17 @@
 """
 Enhanced Dashboard with WooCommerce Order Statistics
 Displays processing, pending, cancelled, refunded, completed, and on-hold orders with counts and values
+
+VERSION HISTORY:
+1.0.0 - WooCommerce order dashboard with multi-status tracking - 11/11/25
+KEY FUNCTIONS:
+- Date range selector (Today, Yesterday, MTD, Custom)
+- Six order status metrics with counts and values
+- Admin sync interface for order cache updates
+- Filterable summary with toggle checkboxes
+- Quick comparison view (Today vs Yesterday vs MTD)
+- Detailed orders view with filters and export
+- Order statistics (avg value, orders per day)
 """
 import streamlit as st
 from datetime import datetime, date, timedelta
@@ -43,7 +54,7 @@ def show_dashboard():
             
             with col3:
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🔄 Sync Now", type="primary", use_container_width=True):
+                if st.button("🔄 Sync Now", type="primary", width='stretch'):
                     with st.spinner("Syncing orders..."):
                         result = WooCommerceOrderSync.sync_orders(sync_start, sync_end)
                         
@@ -376,7 +387,7 @@ def show_dashboard():
             })
         
         comparison_df = pd.DataFrame(comparison_data)
-        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+        st.dataframe(comparison_df, width='stretch', hide_index=True)
     
     st.markdown("---")
     
@@ -427,7 +438,7 @@ def show_dashboard():
                 
                 st.dataframe(
                     display_df,
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     height=400
                 )
@@ -450,5 +461,5 @@ def show_dashboard():
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        if st.button("🔄 Refresh Data", use_container_width=True):
+        if st.button("🔄 Refresh Data", width='stretch'):
             st.rerun()

@@ -1,5 +1,14 @@
 """
 Login page and authentication UI
+
+VERSION HISTORY:
+1.0.0 - Login page with Supabase authentication - 11/11/25
+KEY FUNCTIONS:
+- Email/password login form
+- Integration with SessionManager for auth
+- Logout button for sidebar
+- User info display (name, email, role)
+- Error handling with user-friendly messages
 """
 import streamlit as st
 from auth.session import SessionManager
@@ -17,7 +26,7 @@ def show_login_page():
         with st.form("login_form"):
             email = st.text_input("Email", placeholder="your.email@company.com")
             password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login", use_container_width=True, type="primary")
+            submit = st.form_submit_button("Login", width='stretch', type="primary")
             
             if submit:
                 if not email or not password:
@@ -45,7 +54,7 @@ def handle_login(email: str, password: str):
 
 def show_logout_button():
     """Display logout button in sidebar"""
-    if st.sidebar.button("🚪 Logout", use_container_width=True):
+    if st.sidebar.button("🚪 Logout", width='stretch'):
         SessionManager.logout()
         st.rerun()
 

@@ -116,7 +116,7 @@ def show_all_users():
             if 'Created' in df_display.columns and df_display['Created'].notna().any():
                 df_display['Created'] = pd.to_datetime(df_display['Created'], errors='coerce').dt.strftime('%Y-%m-%d')
             
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            st.dataframe(df_display, width='stretch', hide_index=True)
             
             # Export option
             csv = df_display.to_csv(index=False)
@@ -180,7 +180,7 @@ def show_add_user_form():
         # Submit button
         col1, col2 = st.columns([3, 1])
         with col2:
-            submitted = st.form_submit_button("✅ Create User", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("✅ Create User", type="primary", width='stretch')
         
         if submitted:
             # Validate inputs
@@ -314,7 +314,7 @@ def show_edit_user():
     col1, col2, col3 = st.columns([2, 1, 1])
     
     with col2:
-        if st.button("💾 Update User", type="primary", use_container_width=True):
+        if st.button("💾 Update User", type="primary", width='stretch'):
             # Check if any changes were made
             changes = []
             
@@ -358,7 +358,7 @@ def show_edit_user():
                     st.error("❌ Failed to update user")
     
     with col3:
-        if st.button("🗑️ Delete User", type="secondary", use_container_width=True):
+        if st.button("🗑️ Delete User", type="secondary", width='stretch'):
             st.session_state['confirm_delete_user'] = selected_user['id']
     
     # Delete confirmation
@@ -371,7 +371,7 @@ def show_edit_user():
         col1, col2, col3 = st.columns([2, 1, 1])
         
         with col2:
-            if st.button("✅ Yes, Delete", type="primary", use_container_width=True):
+            if st.button("✅ Yes, Delete", type="primary", width='stretch'):
                 # Prevent deleting yourself
                 admin_user = SessionManager.get_user()
                 if selected_user['id'] == admin_user['id']:
@@ -401,7 +401,7 @@ def show_edit_user():
                         st.error("❌ Failed to delete user")
         
         with col3:
-            if st.button("❌ Cancel", use_container_width=True):
+            if st.button("❌ Cancel", width='stretch'):
                 del st.session_state['confirm_delete_user']
                 st.rerun()
 
@@ -483,7 +483,7 @@ def show_user_permissions():
     if changes_made:
         col1, col2 = st.columns([3, 1])
         with col2:
-            if st.button("💾 Save Changes", type="primary", use_container_width=True):
+            if st.button("💾 Save Changes", type="primary", width='stretch'):
                 success_count = 0
                 admin_user = SessionManager.get_user()
                 
@@ -592,7 +592,7 @@ def show_activity_logs():
                 None: '➖ N/A'
             })
             
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            st.dataframe(display_df, width='stretch', hide_index=True)
             
             # Download option
             csv = df.to_csv(index=False)
@@ -620,7 +620,7 @@ def show_module_logs(module_key: str):
         if 'Timestamp' in df.columns:
             df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S')
         
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width='stretch', hide_index=True)
     else:
         st.info(f"No activity logs found for this module")
 
@@ -662,7 +662,7 @@ def show_all_modules():
         df_display.columns = ['Icon', 'Module Name', 'Key', 'Description', 'Status', 'Order']
         df_display['Status'] = df_display['Status'].map({True: '✅ Active', False: '❌ Inactive'})
         
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        st.dataframe(df_display, width='stretch', hide_index=True)
         
         # Summary stats
         col1, col2, col3 = st.columns(3)
@@ -721,7 +721,7 @@ def show_toggle_module_status():
     button_text = "🔴 Deactivate Module" if current_status else "🟢 Activate Module"
     button_type = "secondary" if current_status else "primary"
     
-    if st.button(button_text, type=button_type, use_container_width=True):
+    if st.button(button_text, type=button_type, width='stretch'):
         if ModuleDB.toggle_module_status(selected_module['id'], new_status):
             status_text = "activated" if new_status else "deactivated"
             st.success(f"✅ Module '{selected_module['module_name']}' has been {status_text}!")
@@ -789,7 +789,7 @@ def show_adjust_module_order():
     )
     
     if changes_made:
-        if st.button("💾 Save New Order", type="primary", use_container_width=True):
+        if st.button("💾 Save New Order", type="primary", width='stretch'):
             success_count = 0
             for module_id, new_order in new_orders.items():
                 if ModuleDB.update_module_order(module_id, new_order):

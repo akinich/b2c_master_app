@@ -2,6 +2,16 @@
 Product Management Module
 Manage WooCommerce products with sync, search, filter, and edit operations
 
+VERSION HISTORY:
+1.0.0 - Product database management with WooCommerce sync - 11/11/25
+KEY FUNCTIONS:
+- Search and filter products (by name, SKU, type, status)
+- Sync products from WooCommerce API (simple + variations)
+- Bulk edit products with role-based restrictions
+- Manual product addition
+- Excel export of product data
+- Product statistics dashboard
+
 Access Control:
 - Admin: Full access (sync, add, edit all fields, delete)
 - User: View + edit HSN/Zoho/Units only (Manager treated as User)
@@ -107,7 +117,7 @@ def show_products_tab(username: str, is_admin: bool):
         )
     
     with col4:
-        if st.button("🔄 Refresh", use_container_width=True):
+        if st.button("🔄 Refresh", width='stretch'):
             st.session_state.pm_refresh_trigger += 1
             st.rerun()
     
@@ -193,7 +203,7 @@ def show_products_tab(username: str, is_admin: bool):
     edited_df = st.data_editor(
         display_df,
         column_config=column_config,
-        use_container_width=True,
+        width='stretch',
         num_rows="fixed",
         hide_index=True,
         key=f"pm_editor_{st.session_state.pm_refresh_trigger}"
@@ -203,18 +213,18 @@ def show_products_tab(username: str, is_admin: bool):
     col1, col2, col3 = st.columns([2, 1, 1])
     
     with col1:
-        if st.button("💾 Save Changes", type="primary", use_container_width=True):
+        if st.button("💾 Save Changes", type="primary", width='stretch'):
             save_product_changes(display_df, edited_df, username, is_admin)
     
     with col2:
         # Export to Excel
-        if st.button("📥 Export to Excel", use_container_width=True):
+        if st.button("📥 Export to Excel", width='stretch'):
             export_to_excel(display_df)
     
     with col3:
         # Delete selected (admin only)
         if is_admin:
-            if st.button("🗑️ Delete Selected", use_container_width=True):
+            if st.button("🗑️ Delete Selected", width='stretch'):
                 st.warning("⚠️ Delete functionality: Select rows and implement delete logic here")
 
 
@@ -332,7 +342,7 @@ consumer_secret = "cs_xxxxx"
     with col2:
         st.metric("Max per sync", "100", help="WooCommerce API limit")
     
-    if st.button("🚀 Start Sync", type="primary", use_container_width=True):
+    if st.button("🚀 Start Sync", type="primary", width='stretch'):
         sync_from_woocommerce(wc_api_url, wc_consumer_key, wc_consumer_secret, sync_limit, username)
 
 
@@ -517,7 +527,7 @@ def show_add_product_tab(username: str):
         
         notes = st.text_area("Notes")
         
-        submitted = st.form_submit_button("➕ Add Product", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("➕ Add Product", type="primary", width='stretch')
         
         if submitted:
             if not product_name:

@@ -2,6 +2,17 @@
 Stock & Price Updater Module - OPTIMIZED VERSION
 Update WooCommerce product prices and stock with list management
 
+VERSION HISTORY:
+1.0.0 - Optimized stock and price updater with parallel processing - 11/11/25
+KEY FUNCTIONS:
+- Batch fetching from WooCommerce (100 products per call)
+- Parallel updates to WooCommerce (ThreadPoolExecutor with 5 workers)
+- Smart updates (only changed values)
+- Updatable/Non-updatable/Deleted list management
+- Excel bulk upload with validation
+- Real-time sync with reduced timeouts (10s)
+- Change history tracking with batch IDs
+
 OPTIMIZATIONS:
 - Batch fetching from WooCommerce (100 products per call)
 - Batch updates to WooCommerce (parallel processing)
@@ -115,12 +126,12 @@ def show_update_tab(username: str, is_admin: bool):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("🔄 Refresh Data", use_container_width=True, help="Reload from local database"):
+        if st.button("🔄 Refresh Data", width='stretch', help="Reload from local database"):
             load_all_product_data()
             st.success("✅ Data refreshed!")
     
     with col2:
-        if st.button("🔄 Sync from WooCommerce", use_container_width=True, help="Fetch latest data from WooCommerce"):
+        if st.button("🔄 Sync from WooCommerce", width='stretch', help="Fetch latest data from WooCommerce"):
             sync_from_woocommerce_optimized(username)
     
     with col3:
@@ -130,7 +141,7 @@ def show_update_tab(username: str, is_admin: bool):
             data=generate_excel_template(),
             file_name=f"stock_price_template_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
+            width='stretch'
         ):
             st.success("✅ Template downloaded!")
     
@@ -284,7 +295,7 @@ def show_updatable_table(username: str, is_admin: bool):
     edited_df = st.data_editor(
         df,
         column_config=column_config,
-        use_container_width=True,
+        width='stretch',
         num_rows="fixed",
         hide_index=True,
         key=f"spu_updatable_editor_{st.session_state.spu_refresh_trigger}"
@@ -294,15 +305,15 @@ def show_updatable_table(username: str, is_admin: bool):
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("👁️ Preview Changes", type="secondary", use_container_width=True):
+        if st.button("👁️ Preview Changes", type="secondary", width='stretch'):
             preview_changes(edited_df, username)
     
     with col2:
-        if st.button("💾 Update Products", type="primary", use_container_width=True, disabled=(st.session_state.spu_preview_changes is None)):
+        if st.button("💾 Update Products", type="primary", width='stretch', disabled=(st.session_state.spu_preview_changes is None)):
             apply_updates_optimized(username)
     
     with col3:
-        if st.button("🔄 Clear Changes", use_container_width=True):
+        if st.button("🔄 Clear Changes", width='stretch'):
             st.session_state.spu_preview_changes = None
             st.rerun()
     
@@ -325,7 +336,7 @@ def show_non_updatable_table():
     # Display read-only table
     st.dataframe(
         df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True
     )
 
@@ -344,7 +355,7 @@ def show_deleted_table():
     # Display read-only table
     st.dataframe(
         df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True
     )
 
@@ -476,7 +487,7 @@ def show_preview_table():
         })
     
     preview_df = pd.DataFrame(preview_data)
-    st.dataframe(preview_df, use_container_width=True, hide_index=True)
+    st.dataframe(preview_df, width='stretch', hide_index=True)
 
 
 # ==========================================

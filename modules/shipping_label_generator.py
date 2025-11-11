@@ -1,6 +1,17 @@
 """
 Shipping Label Generator Module
 Generates printable PDF labels with Order # and Customer Name
+
+VERSION HISTORY:
+1.0.0 - PDF shipping label generator with batch processing - 11/11/25
+KEY FUNCTIONS:
+- Generate PDF labels from Excel/CSV (order #, customer name)
+- Auto-remove duplicates and empty rows
+- Configurable font styles (6 fonts available)
+- Adjustable label dimensions (default 50mm x 30mm)
+- Batch processing for large files (500 labels per batch)
+- Smart text wrapping and font sizing
+- One label per PDF page for label printers
 """
 import streamlit as st
 import pandas as pd
@@ -184,14 +195,14 @@ def show():
             st.markdown("#### 👀 Data Preview")
             df_preview = df[["order #", "name"]].reset_index(drop=True)
             df_preview.index += 1  # Start from 1
-            st.dataframe(df_preview.head(20), use_container_width=True)
+            st.dataframe(df_preview.head(20), width='stretch')
             
             if len(df) > 20:
                 st.caption(f"Showing first 20 of {len(df)} labels")
             
             # Generate button
             st.markdown("---")
-            if st.button("🚀 Generate PDF Labels", type="primary", use_container_width=True):
+            if st.button("🚀 Generate PDF Labels", type="primary", width='stretch'):
                 generate_labels(
                     df=df,
                     user=user,
@@ -317,7 +328,7 @@ def process_single_batch(df, user, font_name, width_mm, height_mm, font_override
                     file_name=output_filename,
                     mime="application/pdf",
                     type="primary",
-                    use_container_width=True
+                    width='stretch'
                 )
                 
                 # Log success
