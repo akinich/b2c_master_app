@@ -3,12 +3,18 @@ Order Extractor Module
 Fetch orders from WooCommerce between dates and export to Excel
 
 VERSION HISTORY:
+1.1.0 - Added customer notes column to export - 11/11/25
+      ADDITIONS:
+      - Customer notes now included in Orders sheet export
+      - Notes pulled from WooCommerce API customer_note field
+      - Displayed in both preview table and Excel download
 1.0.0 - WooCommerce order extractor with Excel export - 11/11/25
 KEY FUNCTIONS:
 - Fetch orders from WooCommerce API with date filters (max 31 days)
 - Pagination support (100 orders per page)
 - Selectable orders with persistent checkboxes
 - Two-sheet Excel export (Orders + Item Summary)
+- Customer notes extraction from WooCommerce
 - Rate limiting and retry logic
 - Activity logging for audit trail
 """
@@ -353,6 +359,7 @@ def process_orders(orders):
                 "Mobile Number": billing.get('phone', ''),
                 "Shipping Address": shipping_address if shipping_address else 'N/A',
                 "Items Ordered": items_ordered if items_ordered else 'N/A',
+                "Customer Notes": order.get('customer_note', ''),
                 "Line Items": line_items  # for Sheet 2
             })
         except Exception as e:
@@ -368,7 +375,7 @@ def generate_excel(df):
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         # --- Sheet 1: Orders ---
-        sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value", "Order Status", "Total Items"]].copy()
+        sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Customer Notes", "Order Value", "Order Status", "Total Items"]].copy()
         sheet1_df.rename(columns={
             "Order ID": "order #",
             "Name": "name",
