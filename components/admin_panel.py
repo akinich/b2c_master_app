@@ -2,8 +2,12 @@
 Admin Panel Components - FIXED VERSION
 Handles user management, permissions, activity logs, and module management
 
-VERSION: 1.2.1
+VERSION: 1.2.2
 DATE: 11/12/25
+PERFORMANCE IMPROVEMENTS:
+- Added refresh buttons to clear cache and reload data
+- User list and module list now have manual refresh capability
+- Works with database caching for optimal performance
 SECURITY IMPROVEMENTS:
 - Added CSV injection protection for exports
 FIXES:
@@ -67,8 +71,15 @@ def show_user_management():
 
 def show_all_users():
     """Display all users in the system with enhanced controls"""
-    st.markdown("#### All Users")
-    
+    # Title with refresh button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("#### All Users")
+    with col2:
+        if st.button("🔄 Refresh", help="Clear cache and reload users"):
+            st.cache_data.clear()
+            st.rerun()
+
     users = UserDB.get_all_users()
     
     if users:
@@ -658,8 +669,15 @@ def show_module_management():
 
 def show_all_modules():
     """Display all modules with their current status"""
-    st.markdown("#### All Registered Modules")
-    
+    # Title with refresh button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("#### All Registered Modules")
+    with col2:
+        if st.button("🔄 Refresh", key="refresh_modules", help="Clear cache and reload modules"):
+            st.cache_data.clear()
+            st.rerun()
+
     modules = ModuleDB.get_all_modules()
     
     if modules:
