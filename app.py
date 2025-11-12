@@ -3,6 +3,12 @@ Main application entry point
 Multi-App Dashboard with Authentication and Role-Based Access
 
 VERSION HISTORY:
+1.1.0 - Enhanced security with whitelisted module loading - 11/12/25
+      SECURITY IMPROVEMENTS:
+      - Added whitelist for allowed modules (prevents code injection)
+      - Replaced __import__ with importlib for safer module loading
+      - Added explicit authentication/authorization checks
+      - Sanitized error messages to prevent information disclosure
 1.0.0 - Initial multi-app dashboard with role-based access - 11/11/25
 KEY FUNCTIONS:
 - Dynamic module loading with require_access checks
@@ -11,6 +17,7 @@ KEY FUNCTIONS:
 - Breadcrumb navigation
 """
 import streamlit as st
+import importlib
 from auth import SessionManager, show_login_page, show_logout_button, show_user_info
 from components.sidebar import show_sidebar, show_module_breadcrumb
 from components.dashboard import show_dashboard
@@ -32,55 +39,79 @@ st.set_page_config(
 # Initialize session
 SessionManager.init_session()
 
+# SECURITY: Whitelist of allowed modules
+# Only modules in this set can be loaded dynamically
+ALLOWED_MODULES = {
+    'order_extractor',
+    'stock_price_updater',
+    'product_management',
+    'woocommerce_zoho_export',
+    'shipping_label_generator',
+    'mrp_label_generator',
+    'module_template'  # Template for creating new modules
+}
+
 def load_module(module_key: str):
     """
-    Dynamically load and display a module
+    Securely load and display a module with validation
+
     Args:
         module_key: The key of the module to load (e.g., 'mrp_label_generator')
+
+    Security:
+        - Validates module_key against whitelist (prevents code injection)
+        - Checks user authentication before loading
+        - Checks user authorization for the specific module
+        - Uses importlib instead of __import__ for safer importing
     """
     try:
-        # Import the module dynamically
-        module = __import__(f'modules.{module_key}', fromlist=['show'])
-        
+        # SECURITY: Check if user is authenticated
+        if not SessionManager.is_logged_in():
+            st.error("Authentication required")
+            st.stop()
+
+        # SECURITY: Validate module_key against whitelist
+        if module_key not in ALLOWED_MODULES:
+            st.error("Access denied: Invalid module")
+            # Log security event
+            user = SessionManager.get_user()
+            if user:
+                from config.database import ActivityLogger
+                ActivityLogger.log(
+                    user_id=user['id'],
+                    action_type='security_violation',
+                    module_key='system',
+                    description=f"Attempted to access invalid module: {module_key}"
+                )
+            st.stop()
+
+        # SECURITY: Check if user has access to this module
+        if not SessionManager.has_module_access(module_key):
+            st.error("Access denied: You don't have permission to access this module")
+            st.stop()
+
+        # Import the module using importlib (safer than __import__)
+        module = importlib.import_module(f'modules.{module_key}')
+
         # Check if module has a 'show' function
         if hasattr(module, 'show'):
             module.show()
         else:
-            st.error(f"Module '{module_key}' does not have a 'show()' function")
-            st.info("Each module file must contain a show() function as the entry point")
-    
+            st.error("Module configuration error")
+            st.info("Please contact administrator")
+
     except ModuleNotFoundError:
-        st.error(f"Module '{module_key}' not found")
-        st.info(f"Please create the file: modules/{module_key}.py")
-        st.code(f"""
-# modules/{module_key}.py
+        st.error("Module not found")
+        st.info("Please contact administrator if this module should be available")
 
-import streamlit as st
-from auth.session import SessionManager
-from config.database import ActivityLogger
-
-def show():
-    '''Main function for {module_key} module'''
-    
-    # Ensure user has access
-    SessionManager.require_access('{module_key}')
-    
-    st.markdown("## Your Module Content Here")
-    st.write("Build your module functionality here...")
-    
-    # Example: Log module usage
-    user = SessionManager.get_user()
-    ActivityLogger.log(
-        user_id=user['id'],
-        action_type='module_use',
-        module_key='{module_key}',
-        description="User used {module_key} module"
-    )
-        """, language='python')
-    
     except Exception as e:
-        st.error(f"Error loading module: {str(e)}")
-        st.exception(e)
+        # SECURITY: Don't expose internal error details to user
+        st.error("An error occurred while loading the module")
+
+        # Log error securely (server-side only)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error loading module {module_key}: {str(e)}", exc_info=True)
 
 
 def main():

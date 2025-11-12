@@ -4,6 +4,9 @@ woocommerce_zoho_export.py
 Module Key: woocommerce_zoho_export
 
 VERSION HISTORY:
+1.0.1 - Added CSV injection protection - 11/12/25
+      SECURITY:
+      - Added CSV sanitization to prevent formula injection attacks
 1.0.0 - WooCommerce to Zoho export with product mapping - 11/11/25
 KEY FUNCTIONS:
 - Fetch completed orders from WooCommerce API with pagination
@@ -28,6 +31,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
+from utils.csv_utils import sanitize_dataframe_for_csv
 from dateutil.parser import parse
 from typing import Dict, List, Tuple, Optional
 from io import BytesIO
@@ -649,8 +653,13 @@ def show_export_tab():
         # Prepare export files
         try:
             append_log("Preparing export files...", "info")
-            csv_bytes = df.to_csv(index=False).encode('utf-8')
-            excel_bytes = create_excel_bytes(summary_df, order_details_df)
+            # SECURITY: Sanitize DataFrames to prevent CSV injection
+            safe_df = sanitize_dataframe_for_csv(df)
+            safe_summary_df = sanitize_dataframe_for_csv(summary_df)
+            safe_order_details_df = sanitize_dataframe_for_csv(order_details_df)
+
+            csv_bytes = safe_df.to_csv(index=False).encode('utf-8')
+            excel_bytes = create_excel_bytes(safe_summary_df, safe_order_details_df)
             zip_bytes = create_zip_bytes(csv_bytes, excel_bytes, start_date, end_date)
             append_log("Export files ready", "success")
         except Exception as e:

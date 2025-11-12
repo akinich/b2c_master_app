@@ -4,6 +4,12 @@ Merges multiple product label PDFs based on Excel quantity data
 PDFs are stored in Supabase Storage
 
 VERSION HISTORY:
+1.0.1 - Added file upload security validation - 11/12/25
+      SECURITY IMPROVEMENTS:
+      - Added zip bomb protection (compression ratio check)
+      - Added path traversal prevention in ZIP files
+      - Enhanced file validation for Excel uploads
+      - Maximum decompressed size limit (100MB)
 1.0.0 - MRP label PDF merger with cloud storage - 11/11/25
 KEY FUNCTIONS:
 - Merge product label PDFs based on Excel quantity sheet
@@ -20,8 +26,68 @@ from PyPDF2 import PdfMerger, PdfReader, PdfWriter
 import io
 import zipfile
 from datetime import datetime
+from pathlib import Path
 from auth.session import SessionManager
 from config.database import Database, ActivityLogger
+
+
+# Security constants
+MAX_FILE_SIZE_MB = 10
+MAX_DECOMPRESSED_SIZE_MB = 100
+
+
+def validate_uploaded_excel(uploaded_file) -> tuple[bool, str]:
+    """
+    Validate uploaded Excel file for security issues
+
+    Args:
+        uploaded_file: Streamlit uploaded file object
+
+    Returns:
+        tuple: (is_valid, error_message)
+
+    Security checks:
+        - File extension validation
+        - File size limit
+        - Zip bomb detection (Excel files are ZIP-based)
+        - Path traversal prevention
+    """
+    # Check file extension
+    file_ext = Path(uploaded_file.name).suffix.lower()
+    if file_ext not in ['.xlsx', '.xls']:
+        return False, f"Invalid file type: {file_ext}. Only .xlsx files allowed."
+
+    # Check file size
+    file_size_mb = uploaded_file.size / (1024 * 1024)
+    if file_size_mb > MAX_FILE_SIZE_MB:
+        return False, f"File too large: {file_size_mb:.1f}MB. Max: {MAX_FILE_SIZE_MB}MB"
+
+    # For .xlsx files, validate ZIP structure (Excel 2007+ uses ZIP format)
+    if file_ext == '.xlsx':
+        try:
+            uploaded_file.seek(0)
+            with zipfile.ZipFile(uploaded_file, 'r') as zip_file:
+                # Check for zip bomb (excessive compression ratio)
+                total_uncompressed = sum(info.file_size for info in zip_file.infolist())
+                total_uncompressed_mb = total_uncompressed / (1024 * 1024)
+
+                if total_uncompressed_mb > MAX_DECOMPRESSED_SIZE_MB:
+                    return False, f"Decompressed size too large: {total_uncompressed_mb:.1f}MB (max: {MAX_DECOMPRESSED_SIZE_MB}MB)"
+
+                # Check for path traversal in ZIP entries
+                for member in zip_file.namelist():
+                    if member.startswith('/') or '..' in member or member.startswith('\\'):
+                        return False, "Invalid file structure (path traversal detected)"
+
+            # Reset file pointer after validation
+            uploaded_file.seek(0)
+
+        except zipfile.BadZipFile:
+            return False, "Invalid Excel file format (not a valid ZIP archive)"
+        except Exception as e:
+            return False, f"File validation error: {str(e)}"
+
+    return True, ""
 
 
 def show():
@@ -66,12 +132,14 @@ def show_label_generator(user, profile):
     )
     
     if uploaded_file is not None:
-        # Validate file size
-        file_size_mb = uploaded_file.size / (1024 * 1024)
-        if file_size_mb > 10:
-            st.error(f"❌ File too large ({file_size_mb:.1f} MB). Maximum size is 10 MB.")
+        # SECURITY: Validate uploaded file
+        is_valid, error_msg = validate_uploaded_excel(uploaded_file)
+        if not is_valid:
+            st.error(f"❌ {error_msg}")
             return
-        
+
+        file_size_mb = uploaded_file.size / (1024 * 1024)
+
         try:
             # Log file upload
             ActivityLogger.log(

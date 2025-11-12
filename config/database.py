@@ -3,6 +3,11 @@ Database configuration and connection utilities for Supabase
 UPDATED WITH FIXED USER MANAGEMENT (Create, Edit, Delete)
 
 VERSION HISTORY:
+1.2.1 - Enhanced security for user creation - 11/12/25
+      SECURITY IMPROVEMENTS:
+      - Removed temporary password display from UI (security risk)
+      - Users now required to use 'Forgot Password' link to set password
+      - Prevents password exposure via UI, screenshots, screen sharing
 1.2.0 - Fixed user management (create, update, delete), enhanced error handling - 05/11/25
       FIXES:
       - Fixed create_user() to properly work with Supabase Auth admin.create_user()
@@ -271,14 +276,9 @@ class UserDB:
         
            # Success!
            st.success("✅ User created successfully!")
-           st.success(f"🔓 User can login immediately")
-        
-           # Show temporary password
-           with st.expander("🔑 Temporary Password (click to view)", expanded=False):
-               st.code(temp_password, language=None)
-               st.warning("⚠️ Share this password with the user securely")
-               st.info("💡 User should change password after first login")
-        
+           st.info("📧 User must use 'Forgot Password' link on login page to set their password")
+           st.warning("⚠️ For security, temporary passwords are NOT displayed")
+
            return True
         
        except Exception as e:
