@@ -2,8 +2,10 @@
 Admin Panel Components - FIXED VERSION
 Handles user management, permissions, activity logs, and module management
 
-VERSION: 1.2.0
-DATE: 11/05/25
+VERSION: 1.2.1
+DATE: 11/12/25
+SECURITY IMPROVEMENTS:
+- Added CSV injection protection for exports
 FIXES:
 - Fixed user creation to properly work with Supabase Auth
 - Added user deletion with confirmation
@@ -18,6 +20,7 @@ import re
 from typing import List, Dict, Optional
 from auth.session import SessionManager
 from config.database import UserDB, ModuleDB, ActivityLogger, UserPermissionDB
+from utils.csv_utils import sanitize_dataframe_for_csv
 
 
 # =====================================================
@@ -117,9 +120,11 @@ def show_all_users():
                 df_display['Created'] = pd.to_datetime(df_display['Created'], errors='coerce').dt.strftime('%Y-%m-%d')
             
             st.dataframe(df_display, width='stretch', hide_index=True)
-            
+
             # Export option
-            csv = df_display.to_csv(index=False)
+            # SECURITY: Sanitize DataFrame to prevent CSV injection
+            safe_df = sanitize_dataframe_for_csv(df_display)
+            csv = safe_df.to_csv(index=False)
             st.download_button(
                 label="📥 Download User List",
                 data=csv,
@@ -593,9 +598,11 @@ def show_activity_logs():
             })
             
             st.dataframe(display_df, width='stretch', hide_index=True)
-            
+
             # Download option
-            csv = df.to_csv(index=False)
+            # SECURITY: Sanitize DataFrame to prevent CSV injection
+            safe_df = sanitize_dataframe_for_csv(df)
+            csv = safe_df.to_csv(index=False)
             st.download_button(
                 label="📥 Download as CSV",
                 data=csv,

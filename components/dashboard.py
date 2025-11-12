@@ -3,6 +3,10 @@ Enhanced Dashboard with WooCommerce Order Statistics
 Displays processing, pending, cancelled, refunded, completed, and on-hold orders with counts and values
 
 VERSION HISTORY:
+1.0.1 - Added CSV injection protection - 11/12/25
+      SECURITY:
+      - Added CSV sanitization to prevent formula injection attacks
+      - Protects against RCE via malicious CSV exports
 1.0.0 - WooCommerce order dashboard with multi-status tracking - 11/11/25
 KEY FUNCTIONS:
 - Date range selector (Today, Yesterday, MTD, Custom)
@@ -18,6 +22,7 @@ from datetime import datetime, date, timedelta
 import pandas as pd
 from auth.session import SessionManager
 from db.db_orders import OrderDB, WooCommerceOrderSync
+from utils.csv_utils import sanitize_dataframe_for_csv
 
 
 def show_dashboard():
@@ -445,7 +450,9 @@ def show_dashboard():
                 
                 # Export option
                 if st.button("📥 Export to CSV"):
-                    csv = display_df.to_csv(index=False)
+                    # SECURITY: Sanitize DataFrame to prevent CSV injection
+                    safe_df = sanitize_dataframe_for_csv(display_df)
+                    csv = safe_df.to_csv(index=False)
                     st.download_button(
                         label="Download CSV",
                         data=csv,

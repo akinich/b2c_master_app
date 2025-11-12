@@ -2,6 +2,11 @@
 Login page and authentication UI
 
 VERSION HISTORY:
+1.0.1 - Added login rate limiting - 11/12/25
+      SECURITY IMPROVEMENTS:
+      - Added rate limiting (5 attempts, 5-minute lockout)
+      - Prevents brute force attacks
+      - Shows remaining attempts to user
 1.0.0 - Login page with Supabase authentication - 11/11/25
 KEY FUNCTIONS:
 - Email/password login form
@@ -12,6 +17,7 @@ KEY FUNCTIONS:
 """
 import streamlit as st
 from auth.session import SessionManager
+from utils.rate_limiter import LoginRateLimiter
 
 def show_login_page():
     """Display login page"""
@@ -37,19 +43,45 @@ def show_login_page():
 
 def handle_login(email: str, password: str):
     """
-    Handle login attempt
+    Handle login attempt with rate limiting
+
     Args:
         email: User's email
         password: User's password
+
+    Security:
+        - Checks if account is locked out
+        - Records failed attempts
+        - Displays remaining attempts
+        - Locks out after MAX_ATTEMPTS failures
     """
+    # SECURITY: Check if account is locked out
+    if LoginRateLimiter.is_locked_out(email):
+        lockout_message = LoginRateLimiter.format_lockout_message(email)
+        st.error(f"❌ {lockout_message}")
+        st.warning("⏳ Please wait before trying again")
+        return
+
     with st.spinner("Logging in..."):
         success, error_message = SessionManager.login(email, password)
-        
+
         if success:
+            # SECURITY: Clear failed attempts on successful login
+            LoginRateLimiter.record_successful_login(email)
             st.success("✅ Login successful! Redirecting...")
             st.rerun()
         else:
-            st.error(f"❌ {error_message}")
+            # SECURITY: Record failed attempt
+            LoginRateLimiter.record_failed_attempt(email)
+            remaining = LoginRateLimiter.get_remaining_attempts(email)
+
+            if remaining > 0:
+                st.error(f"❌ {error_message}")
+                if remaining <= 2:  # Warn when few attempts remain
+                    st.warning(f"⚠️ {remaining} attempt(s) remaining before temporary lockout")
+            else:
+                lockout_message = LoginRateLimiter.format_lockout_message(email)
+                st.error(f"❌ {lockout_message}")
 
 
 def show_logout_button():
