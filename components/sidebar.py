@@ -2,6 +2,11 @@
 Sidebar navigation component
 
 VERSION HISTORY:
+1.2.0 - Performance optimization: removed unnecessary reruns - 11/12/25
+      PERFORMANCE IMPROVEMENTS:
+      - Removed st.rerun() calls (Streamlit auto-detects state changes)
+      - Uses button callbacks for cleaner state management
+      - Eliminates unnecessary full page reloads on navigation
 1.1.0 - Added filtering to hide inactive modules from sidebar - 03/11/25
 1.0.0 - Initial sidebar with module navigation and admin panel - 30/10/25
 """
@@ -24,25 +29,24 @@ def show_sidebar():
         
         current_module = SessionManager.get_current_module()
         
-        # Dashboard home button
-        if st.button("🏠 Dashboard", width='stretch', 
+        # Dashboard home button (no st.rerun needed - Streamlit auto-detects state change)
+        if st.button("🏠 Dashboard", width='stretch',
                     type="primary" if current_module is None else "secondary"):
             st.session_state.current_module = None
-            st.rerun()
-        
+
         st.markdown("---")
         st.markdown("### 📦 Modules")
-        
+
         # Display accessible modules (only active ones)
         if active_modules:
             for module in active_modules:
                 module_key = module['module_key']
                 module_name = module['module_name']
                 icon = module.get('icon', '⚙️')
-                
+
                 # Highlight current module
                 button_type = "primary" if current_module == module_key else "secondary"
-                
+
                 if st.button(
                     f"{icon} {module_name}",
                     key=f"nav_{module_key}",
@@ -50,7 +54,6 @@ def show_sidebar():
                     type=button_type
                 ):
                     SessionManager.set_current_module(module_key)
-                    st.rerun()
         else:
             st.info("No modules available for your role.")
         
@@ -58,26 +61,22 @@ def show_sidebar():
         if SessionManager.is_admin():
             st.markdown("---")
             st.markdown("### ⚙️ Administration")
-            
+
             if st.button("👥 User Management", width='stretch',
                         type="primary" if current_module == 'admin_users' else "secondary"):
                 st.session_state.current_module = 'admin_users'
-                st.rerun()
-            
+
             if st.button("🔐 User Permissions", width='stretch',
                         type="primary" if current_module == 'admin_permissions' else "secondary"):
                 st.session_state.current_module = 'admin_permissions'
-                st.rerun()
-            
+
             if st.button("📋 Activity Logs", width='stretch',
                         type="primary" if current_module == 'admin_logs' else "secondary"):
                 st.session_state.current_module = 'admin_logs'
-                st.rerun()
-            
+
             if st.button("📦 Module Management", width='stretch',
                         type="primary" if current_module == 'admin_modules' else "secondary"):
                 st.session_state.current_module = 'admin_modules'
-                st.rerun()
 
 
 def show_module_breadcrumb():
