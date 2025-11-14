@@ -42,22 +42,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import from your app structure
 from auth.session import SessionManager
-from config.database import ActivityLogger, Database
+from config.database import ActivityLogger, Database, WooCommerceDB
 
-# Import product database helper
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-try:
-    from db_products import ProductDB
-except ImportError:
-    try:
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from db_products import ProductDB
-    except ImportError:
-        st.error("⚠️ Cannot import ProductDB. Make sure db_products.py is in root folder")
-        st.stop()
+# Alias WooCommerceDB as ProductDB for compatibility
+ProductDB = WooCommerceDB
 
 
 def show():

@@ -3,6 +3,13 @@ Order Extractor Module
 Fetch orders from WooCommerce between dates and export to Excel
 
 VERSION HISTORY:
+1.3.0 - Added transaction ID and column reordering - 11/12/25
+      ADDITIONS:
+      - Transaction ID now included in export
+      - Columns reordered: S.No, Order #, Name, Items Ordered, Total Items,
+        Shipping Address, Mobile Number, Customer Notes, Order Total,
+        Payment Method, Transaction ID, Order Status
+      - Empty customer notes filled with "-"
 1.2.0 - Added payment method column to export - 11/11/25
       ADDITIONS:
       - Payment method now included in Orders sheet export
@@ -18,7 +25,7 @@ KEY FUNCTIONS:
 - Pagination support (100 orders per page)
 - Selectable orders with persistent checkboxes
 - Two-sheet Excel export (Orders + Item Summary)
-- Payment method and customer notes extraction from WooCommerce
+- Payment method, customer notes, and transaction ID extraction
 - Rate limiting and retry logic
 - Activity logging for audit trail
 """
@@ -349,22 +356,34 @@ def process_orders(orders):
             full_name = f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip()
             if not full_name:
                 full_name = "N/A"
-            
+
+            # Get customer notes and fill empty with "-"
+            customer_notes = order.get('customer_note', '').strip()
+            if not customer_notes:
+                customer_notes = "-"
+
+            # Get transaction ID
+            transaction_id = order.get('transaction_id', '')
+            if not transaction_id:
+                transaction_id = "-"
+
+            # Reordered columns as per user request
             data.append({
                 "S.No": idx + 1,
                 "Select": True,
                 "Order ID": order_id,
                 "Date": order_date,
                 "Name": full_name,
-                "Order Status": order.get('status', 'unknown'),
-                "Order Value": float(order.get('total', 0)),
-                "No of Items": len(line_items),
-                "Total Items": total_items,
-                "Mobile Number": billing.get('phone', ''),
-                "Shipping Address": shipping_address if shipping_address else 'N/A',
                 "Items Ordered": items_ordered if items_ordered else 'N/A',
+                "Total Items": total_items,
+                "Shipping Address": shipping_address if shipping_address else 'N/A',
+                "Mobile Number": billing.get('phone', ''),
+                "Customer Notes": customer_notes,
+                "Order Value": float(order.get('total', 0)),
                 "Payment Method": order.get('payment_method_title', ''),
-                "Customer Notes": order.get('customer_note', ''),
+                "Transaction ID": transaction_id,
+                "Order Status": order.get('status', 'unknown'),
+                "No of Items": len(line_items),  # Keep for backward compatibility
                 "Line Items": line_items  # for Sheet 2
             })
         except Exception as e:
@@ -377,15 +396,23 @@ def process_orders(orders):
 def generate_excel(df):
     """Generate a customized Excel file with two sheets: Orders and Item Summary"""
     output = BytesIO()
-    
+
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         # --- Sheet 1: Orders ---
-        sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Payment Method", "Customer Notes", "Order Value", "Order Status", "Total Items"]].copy()
+        # Reordered columns as per user request
+        sheet1_df = df[[
+            "Order ID", "Name", "Items Ordered", "Total Items",
+            "Shipping Address", "Mobile Number", "Customer Notes",
+            "Order Value", "Payment Method", "Transaction ID", "Order Status"
+        ]].copy()
+
+        # Rename columns for better display
         sheet1_df.rename(columns={
-            "Order ID": "order #",
-            "Name": "name",
+            "Order ID": "Order #",
             "Order Value": "Order Total"
         }, inplace=True)
+
+        # Insert S.No as first column
         sheet1_df.insert(0, "S.No", range(1, len(sheet1_df)+1))
         sheet1_df.to_excel(writer, index=False, sheet_name='Orders')
         workbook = writer.book
