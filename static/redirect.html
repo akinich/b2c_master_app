@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Reset - Redirecting...</title>
+
+    <!-- Immediate redirect via meta refresh as fallback -->
+    <meta http-equiv="refresh" content="0;url=javascript:void(0)">
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            max-width: 500px;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        a { color: white; text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Password Reset</h1>
+        <div class="spinner"></div>
+        <p>Redirecting you to the password reset form...</p>
+        <p style="font-size: 12px; margin-top: 20px;">
+            If you're not redirected automatically,
+            <a href="#" id="manual-link">click here</a>.
+        </p>
+    </div>
+
+    <script>
+        // This runs immediately when page loads
+        (function() {
+            // Get hash from URL
+            const hash = window.location.hash;
+
+            if (hash && hash.length > 1) {
+                // Remove the # and convert to query params
+                const queryParams = hash.substring(1);
+
+                // Build the new URL
+                const baseUrl = 'https://farm2app.streamlit.app/';
+                const newUrl = baseUrl + '?' + queryParams;
+
+                // Update manual link
+                document.getElementById('manual-link').href = newUrl;
+
+                // Redirect immediately
+                window.location.replace(newUrl);
+            } else {
+                // No hash found, just go to the app
+                window.location.replace('https://farm2app.streamlit.app/');
+            }
+        })();
+    </script>
+</body>
+</html>
