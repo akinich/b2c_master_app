@@ -3,6 +3,13 @@ Database configuration and connection utilities for Supabase
 UPDATED WITH FIXED USER MANAGEMENT (Create, Edit, Delete)
 
 VERSION HISTORY:
+1.2.4 - Fixed user management issues to match farm-2-app - 11/15/25
+      FIXES:
+      - Fixed get_all_users() to use user_details view (email now shows correctly)
+      - Improved create_user() error handling with detailed SMTP setup guide
+      - Added helpful troubleshooting for "User not allowed" error
+      - Shows temporary password to admin after user creation
+      - Matches farm-2-app's proven working pattern
 1.2.3 - Security enhancement: Error message sanitization - 11/12/25
       SECURITY IMPROVEMENTS:
       - Sanitized all error messages (no technical details exposed to users)
@@ -180,42 +187,34 @@ class UserDB:
         """
         try:
             db = Database.get_client()
-            
-            # Join user_profiles with roles
-            response = db.table('user_profiles') \
+
+            # Use user_details view which includes email from auth.users
+            # This is more efficient than querying auth.users for each user
+            response = db.table('user_details') \
                 .select('*, roles(role_name)') \
                 .execute()
-            
+
             if response.data:
                 users = []
-                for profile in response.data:
-                    # Get email from auth.users
-                    try:
-                        user_response = db.auth.admin.get_user_by_id(profile['id'])
-                        email = user_response.user.email if user_response.user else 'Unknown'
-                    except (KeyError, AttributeError, Exception) as e:
-                        # Log error for debugging
-                        import logging
-                        logging.getLogger(__name__).warning(f"Could not fetch email for user {profile.get('id')}: {e}")
-                        email = 'Unknown'
-                    
+                for user_detail in response.data:
                     users.append({
-                        'id': profile['id'],
-                        'email': email,
-                        'full_name': profile.get('full_name'),
-                        'role_id': profile.get('role_id'),
-                        'role_name': profile['roles']['role_name'] if profile.get('roles') else 'Unknown',
-                        'is_active': profile.get('is_active', True),
-                        'created_at': profile.get('created_at'),
-                        'updated_at': profile.get('updated_at')
+                        'id': user_detail['id'],
+                        'email': user_detail.get('email', 'Unknown'),
+                        'full_name': user_detail.get('full_name'),
+                        'role_id': user_detail.get('role_id'),
+                        'role_name': user_detail['roles']['role_name'] if user_detail.get('roles') else 'Unknown',
+                        'is_active': user_detail.get('is_active', True),
+                        'created_at': user_detail.get('created_at'),
+                        'updated_at': user_detail.get('updated_at')
                     })
-                
+
                 return users
-            
+
             return []
-            
+
         except Exception as e:
-            st.error(f"Error fetching users: {str(e)}")
+            st.error("Unable to load users. Please try again or contact support.")
+            logger.error(f"Error fetching users: {str(e)}", exc_info=True)
             return []
     
     @staticmethod
@@ -230,85 +229,135 @@ class UserDB:
     
     @staticmethod
     def create_user(email: str, full_name: str, role_id: int) -> bool:
-       """
-       Create user with auto-confirmed email (workaround for restricted Supabase Auth)
-       NO SUPABASE DASHBOARD ACCESS NEEDED
-       """
-       try:
-           db = Database.get_client()
-        
-           # Generate secure temporary password
-           temp_password = ''.join(
-               secrets.choice(string.ascii_letters + string.digits + string.punctuation) 
-               for _ in range(20)
-           )
-        
-           # Create user with AUTO-CONFIRMED email (bypasses restrictions)
-           try:
-               auth_response = db.auth.admin.create_user({
-                   "email": email,
-                   "password": temp_password,
-                   "email_confirm": True,  # ← KEY CHANGE: True instead of False
-                   "user_metadata": {
-                       "full_name": full_name
-                   }
-               })
-           except Exception as auth_error:
-               error_msg = str(auth_error).lower()
-            
-               if "already registered" in error_msg or "already exists" in error_msg:
-                   st.error(f"❌ Email {email} already exists")
-                   return False
-               elif "invalid email" in error_msg:
-                   st.error(f"❌ Invalid email: {email}")
-                   return False
-               else:
-                   st.error(f"❌ Auth error: {str(auth_error)}")
-                   st.info("💡 Using auto-confirm workaround...")
-                   return False
-        
-           if not auth_response.user:
-               st.error("❌ Failed to create user")
-               return False
-        
-           user_id = auth_response.user.id
-        
-           # Create user profile
-           profile_data = {
-               'id': user_id,
-               'full_name': full_name,
-               'role_id': role_id,
-               'is_active': True
-           }
-        
-           try:
-               profile_response = db.table('user_profiles').insert(profile_data).execute()
-            
-               if not profile_response.data:
-                   st.error("❌ Failed to create profile")
-                   try:
-                       db.auth.admin.delete_user(user_id)
-                   except:
-                       pass
-                   return False
-           except Exception as profile_error:
-               st.error(f"❌ Profile error: {str(profile_error)}")
-               try:
-                   db.auth.admin.delete_user(user_id)
-               except:
-                   pass
-               return False
-        
-           # Success!
-           st.success("✅ User created successfully!")
-           st.info("📧 User must use 'Forgot Password' link on login page to set their password")
-           st.warning("⚠️ For security, temporary passwords are NOT displayed")
+        """
+        Create user using Supabase Auth API
+        Requires custom SMTP to be configured in Supabase
+        """
+        try:
+            db = Database.get_client()
 
-           return True
-        
-       except Exception as e:
-           st.error(f"❌ Error: {str(e)}")
-           return False
+            # Generate secure temporary password
+            temp_password = ''.join(
+                secrets.choice(string.ascii_letters + string.digits + string.punctuation)
+                for _ in range(20)
+            )
+
+            # Create user via Auth API
+            try:
+                auth_response = db.auth.admin.create_user({
+                    "email": email,
+                    "password": temp_password,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "full_name": full_name
+                    }
+                })
+            except Exception as auth_error:
+                error_msg = str(auth_error)
+                error_msg_lower = error_msg.lower()
+
+                # Check for specific errors
+                if "already registered" in error_msg_lower or "already exists" in error_msg_lower:
+                    st.error("❌ This email is already registered")
+                    return False
+                elif "invalid email" in error_msg_lower:
+                    st.error(f"❌ Invalid email format: {email}")
+                    return False
+                elif "user not allowed" in error_msg_lower:
+                    st.error(f"❌ Auth error: {error_msg}")
+                    with st.expander("🔧 How to Fix 'User not allowed' Error", expanded=True):
+                        st.markdown("""
+### Solution: Configure Custom SMTP in Supabase
+
+The "User not allowed" error occurs when using Supabase's default email service.
+You need to configure custom SMTP (like Gmail, Zoho, etc.) to allow user creation.
+
+**Steps to Fix:**
+
+1. **Go to Supabase Dashboard**
+   - Navigate to: Authentication → Email Templates → SMTP Settings
+
+2. **Configure Custom SMTP** (Example with Gmail):
+   - **SMTP Host:** `smtp.gmail.com`
+   - **Port:** `587` (TLS) or `465` (SSL)
+   - **Username:** Your Gmail address
+   - **Password:** App-specific password (not regular password)
+   - **Sender Email:** Your Gmail address
+   - **Sender Name:** Your App Name
+
+3. **For Zoho Mail:**
+   - **SMTP Host:** `smtp.zoho.com`
+   - **Port:** `587` (TLS) or `465` (SSL)
+   - **Username:** Your Zoho email
+   - **Password:** App-specific password
+   - **Sender Email:** Your Zoho email
+
+4. **Test SMTP:**
+   - In SMTP Settings, click "Send test email"
+   - Verify you receive the test email
+   - If successful, user creation will work
+
+5. **Generate App-Specific Password:**
+   - Gmail: Google Account → Security → 2-Step Verification → App Passwords
+   - Zoho: Zoho Mail → Security → Application-Specific Passwords
+
+**After configuring SMTP, try creating the user again.**
+                        """)
+                    return False
+                else:
+                    st.error(f"❌ Auth error: {error_msg}")
+                    st.info("💡 If you see 'User not allowed' error, configure custom SMTP in Supabase → Authentication → Email Templates → SMTP Settings")
+                    return False
+
+            # Auth API succeeded
+            if auth_response and auth_response.user:
+                user_id = auth_response.user.id
+
+                # Create user profile
+                profile_data = {
+                    'id': user_id,
+                    'full_name': full_name,
+                    'role_id': role_id,
+                    'is_active': True
+                }
+
+                try:
+                    profile_response = db.table('user_profiles').insert(profile_data).execute()
+
+                    if not profile_response.data:
+                        st.error("❌ Failed to create profile")
+                        try:
+                            db.auth.admin.delete_user(user_id)
+                        except:
+                            pass
+                        return False
+                except Exception as profile_error:
+                    st.error(f"❌ Profile error: {str(profile_error)}")
+                    try:
+                        db.auth.admin.delete_user(user_id)
+                    except:
+                        pass
+                    return False
+
+                # Success!
+                st.success("✅ User created successfully!")
+                st.success("🔓 User can now use 'Forgot Password' link on login page to set their password")
+
+                # Show temporary password
+                with st.expander("🔑 Temporary Password (click to view)", expanded=False):
+                    st.code(temp_password, language=None)
+                    st.warning("⚠️ Share this password with the user securely")
+                    st.info("💡 User should change password after first login via 'Forgot Password'")
+
+                return True
+            else:
+                st.error("❌ Failed to create user")
+                return False
+
+        except Exception as e:
+            st.error(f"❌ Unexpected error: {str(e)}")
+            logger.error(f"Unexpected error creating user: {str(e)}", exc_info=True)
+            return False
     
     @staticmethod
     def update_user(user_id: str, full_name: str, role_id: int, is_active: bool) -> bool:
