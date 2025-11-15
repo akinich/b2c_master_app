@@ -2,6 +2,12 @@
 Login page and authentication UI
 
 VERSION HISTORY:
+1.2.0 - Added password reset completion handler - 11/15/25
+      ADDITIONS:
+      - Added show_password_reset_completion() for handling reset tokens
+      - Integration with Supabase Auth update user password
+      - Handles redirect from static/redirect.html after email link click
+      - Query parameter detection for reset_password flow
 1.1.0 - Added password reset functionality - 11/15/25
       ADDITIONS:
       - Added "Forgot Password?" link on login page
@@ -17,6 +23,7 @@ VERSION HISTORY:
 KEY FUNCTIONS:
 - Email/password login form
 - Password reset functionality
+- Password reset completion (new password entry)
 - Integration with SessionManager for auth
 - Logout button for sidebar
 - User info display (name, email, role)
@@ -155,7 +162,7 @@ def show_user_info():
     """Display current user info in sidebar"""
     profile = SessionManager.get_user_profile()
     user = SessionManager.get_user()
-    
+
     if profile and user:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 👤 User Info")
@@ -163,3 +170,69 @@ def show_user_info():
         st.sidebar.write(f"**Email:** {user.get('email')}")
         st.sidebar.write(f"**Role:** {profile.get('role_name', 'N/A')}")
         st.sidebar.markdown("---")
+
+
+def show_password_reset_completion():
+    """
+    Display password reset completion page for users who clicked the reset link
+
+    This page is shown when users return to the app after clicking the password
+    reset link in their email. They can enter their new password here.
+    """
+    # Center the form
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        st.markdown("# 🔐 Set New Password")
+        st.markdown("---")
+        st.info("Please enter your new password below.")
+
+        with st.form("new_password_form"):
+            new_password = st.text_input("New Password", type="password", placeholder="Enter new password")
+            confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm new password")
+            submit = st.form_submit_button("Update Password", width='stretch', type="primary")
+
+            if submit:
+                if not new_password or not confirm_password:
+                    st.error("Please enter both password fields")
+                elif new_password != confirm_password:
+                    st.error("Passwords do not match")
+                elif len(new_password) < 8:
+                    st.error("Password must be at least 8 characters long")
+                else:
+                    handle_password_update(new_password)
+
+
+def handle_password_update(new_password: str):
+    """
+    Handle password update after reset
+
+    Args:
+        new_password: The new password to set
+
+    Uses the access_token from query parameters to update the user's password
+    """
+    # Get access token from query parameters
+    query_params = st.query_params
+    access_token = query_params.get('access_token')
+
+    if not access_token:
+        st.error("❌ Invalid or expired reset link. Please request a new password reset.")
+        return
+
+    with st.spinner("Updating password..."):
+        success, message = SessionManager.complete_password_reset(access_token, new_password)
+
+        if success:
+            st.success(f"✅ {message}")
+            st.info("🔑 You can now log in with your new password.")
+
+            # Clear query parameters
+            st.query_params.clear()
+
+            # Wait a moment then redirect to login
+            import time
+            time.sleep(2)
+            st.rerun()
+        else:
+            st.error(f"❌ {message}")

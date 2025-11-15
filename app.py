@@ -3,6 +3,11 @@ Main application entry point
 Multi-App Dashboard with Authentication and Role-Based Access
 
 VERSION HISTORY:
+1.2.0 - Added password reset completion handler - 11/15/25
+      ADDITIONS:
+      - Added query parameter detection for password reset flow
+      - Integrated show_password_reset_completion for setting new password
+      - Handles redirect from email link via static/redirect.html
 1.1.0 - Enhanced security with whitelisted module loading - 11/12/25
       SECURITY IMPROVEMENTS:
       - Added whitelist for allowed modules (prevents code injection)
@@ -14,11 +19,18 @@ KEY FUNCTIONS:
 - Dynamic module loading with require_access checks
 - Sidebar navigation with admin panel
 - User authentication and session management
+- Password reset flow handling
 - Breadcrumb navigation
 """
 import streamlit as st
 import importlib
-from auth import SessionManager, show_login_page, show_logout_button, show_user_info
+from auth import (
+    SessionManager,
+    show_login_page,
+    show_logout_button,
+    show_user_info,
+    show_password_reset_completion
+)
 from components.sidebar import show_sidebar, show_module_breadcrumb
 from components.dashboard import show_dashboard
 from components.admin_panel import (
@@ -116,50 +128,57 @@ def load_module(module_key: str):
 
 def main():
     """Main application logic"""
-    
+
+    # Check if this is a password reset completion flow (from email link)
+    query_params = st.query_params
+    if query_params.get('reset_password') == 'true' and query_params.get('access_token'):
+        # Show password reset completion page
+        show_password_reset_completion()
+        return
+
     # Check if user is authenticated
     if not SessionManager.is_logged_in():
         # Show login page
         show_login_page()
         return
-    
+
     # User is authenticated - show main app
     # Display sidebar navigation
     show_sidebar()
-    
+
     # Display user info in sidebar
     show_user_info()
-    
+
     # Display logout button
     show_logout_button()
-    
+
     # Get current module
     current_module = SessionManager.get_current_module()
-    
+
     # Show breadcrumb
     show_module_breadcrumb()
-    
+
     # Route to appropriate page
     if current_module is None or current_module == 'dashboard':
         # Show dashboard
         show_dashboard()
-    
+
     elif current_module == 'admin_users':
         # Admin: User Management
         show_user_management()
-    
+
     elif current_module == 'admin_permissions':
         # Admin: User Permissions (CHANGED from Role Permissions)
         show_user_permissions()
-    
+
     elif current_module == 'admin_logs':
         # Admin: Activity Logs
         show_activity_logs()
-    
+
     elif current_module == 'admin_modules':
         # Admin: Module Management
         show_module_management()
-    
+
     else:
         # Load regular module
         load_module(current_module)

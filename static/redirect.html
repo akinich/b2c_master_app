@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Reset - Redirecting...</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            color: #ffcccc;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Password Reset</h1>
+        <div class="spinner"></div>
+        <p id="status">Redirecting to password reset page...</p>
+        <p id="error" class="error" style="display: none;"></p>
+    </div>
+
+    <script>
+        // THIS APP'S URL - CONFIGURE THIS TO YOUR SPECIFIC APP URL
+        // For Streamlit Cloud: https://your-app-name--your-username.streamlit.app/
+        // For local: http://localhost:8501/
+        // IMPORTANT: Update this to match YOUR app's URL, not the other app!
+        const APP_URL = window.location.origin; // Use current origin by default
+
+        // Alternative: Hardcode your specific app URL to prevent redirect to wrong app
+        // const APP_URL = "https://b2c-master-app--yourusername.streamlit.app";
+
+        function redirectToApp() {
+            try {
+                // Get the hash fragment from URL (contains access_token, etc.)
+                const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+                // Get the query parameters (contains type=recovery, etc.)
+                const queryParams = new URLSearchParams(window.location.search);
+
+                // Extract tokens and type
+                const accessToken = hashParams.get('access_token');
+                const refreshToken = hashParams.get('refresh_token');
+                const type = queryParams.get('type') || hashParams.get('type');
+                const errorParam = queryParams.get('error') || hashParams.get('error');
+                const errorDescription = queryParams.get('error_description') || hashParams.get('error_description');
+
+                // Check for errors
+                if (errorParam) {
+                    document.getElementById('status').style.display = 'none';
+                    document.getElementById('error').style.display = 'block';
+                    document.getElementById('error').textContent = `Error: ${errorDescription || errorParam}`;
+                    return;
+                }
+
+                // Build redirect URL with tokens as query parameters
+                const redirectUrl = new URL(APP_URL);
+
+                if (type) redirectUrl.searchParams.set('type', type);
+                if (accessToken) redirectUrl.searchParams.set('access_token', accessToken);
+                if (refreshToken) redirectUrl.searchParams.set('refresh_token', refreshToken);
+
+                // Add a flag to indicate this is a password reset flow
+                redirectUrl.searchParams.set('reset_password', 'true');
+
+                // Log for debugging (remove in production)
+                console.log('Redirecting to:', redirectUrl.toString());
+
+                // Redirect to main app
+                window.location.href = redirectUrl.toString();
+
+            } catch (error) {
+                console.error('Redirect error:', error);
+                document.getElementById('status').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = 'Redirect failed. Please contact support.';
+            }
+        }
+
+        // Execute redirect after a brief delay to show the loading screen
+        setTimeout(redirectToApp, 1000);
+    </script>
+</body>
+</html>
