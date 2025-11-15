@@ -188,29 +188,75 @@ class UserDB:
         try:
             db = Database.get_client()
 
-            # Use user_details view which includes email from auth.users
-            # This is more efficient than querying auth.users for each user
-            response = db.table('user_details') \
-                .select('*, roles(role_name)') \
-                .execute()
+            # Try using user_details view first (more efficient)
+            # If it doesn't exist, fall back to manual email fetching
+            try:
+                response = db.table('user_details') \
+                    .select('*, roles(role_name)') \
+                    .execute()
 
-            if response.data:
-                users = []
-                for user_detail in response.data:
-                    users.append({
-                        'id': user_detail['id'],
-                        'email': user_detail.get('email', 'Unknown'),
-                        'full_name': user_detail.get('full_name'),
-                        'role_id': user_detail.get('role_id'),
-                        'role_name': user_detail['roles']['role_name'] if user_detail.get('roles') else 'Unknown',
-                        'is_active': user_detail.get('is_active', True),
-                        'created_at': user_detail.get('created_at'),
-                        'updated_at': user_detail.get('updated_at')
-                    })
+                # user_details view exists and worked
+                if response.data:
+                    users = []
+                    for user_detail in response.data:
+                        users.append({
+                            'id': user_detail['id'],
+                            'email': user_detail.get('email', 'Unknown'),
+                            'full_name': user_detail.get('full_name'),
+                            'role_id': user_detail.get('role_id'),
+                            'role_name': user_detail['roles']['role_name'] if user_detail.get('roles') else 'Unknown',
+                            'is_active': user_detail.get('is_active', True),
+                            'created_at': user_detail.get('created_at'),
+                            'updated_at': user_detail.get('updated_at')
+                        })
+                    return users
+                return []
 
-                return users
+            except Exception as view_error:
+                # user_details view doesn't exist, use fallback method
+                logger.warning(f"user_details view not found, using fallback method: {str(view_error)}")
 
-            return []
+                # Fallback: Query user_profiles and batch fetch emails from auth
+                response = db.table('user_profiles') \
+                    .select('*, roles(role_name)') \
+                    .execute()
+
+                if response.data:
+                    users = []
+
+                    # Batch fetch all users from auth at once (more efficient than individual fetches)
+                    try:
+                        # Get all auth users in one call
+                        auth_users_response = db.auth.admin.list_users()
+                        # Create a dictionary mapping user_id to email
+                        auth_users = {}
+                        if hasattr(auth_users_response, '__iter__'):
+                            for user in auth_users_response:
+                                if hasattr(user, 'id') and hasattr(user, 'email'):
+                                    auth_users[user.id] = user.email
+                    except Exception as auth_error:
+                        logger.error(f"Error batch-fetching auth users: {str(auth_error)}")
+                        auth_users = {}
+
+                    for profile in response.data:
+                        user_id = profile['id']
+                        # Get email from batch-fetched auth users
+                        email = auth_users.get(user_id, 'Unknown')
+
+                        users.append({
+                            'id': user_id,
+                            'email': email,
+                            'full_name': profile.get('full_name'),
+                            'role_id': profile.get('role_id'),
+                            'role_name': profile['roles']['role_name'] if profile.get('roles') else 'Unknown',
+                            'is_active': profile.get('is_active', True),
+                            'created_at': profile.get('created_at'),
+                            'updated_at': profile.get('updated_at')
+                        })
+
+                    return users
+
+                return []
 
         except Exception as e:
             st.error("Unable to load users. Please try again or contact support.")
