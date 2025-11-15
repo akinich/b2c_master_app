@@ -6,8 +6,7 @@ from .login import (
     show_login_page,
     show_logout_button,
     show_user_info,
-    handle_login,
-    show_password_reset_completion
+    handle_login
 )
 
 __all__ = [
@@ -15,6 +14,5 @@ __all__ = [
     'show_login_page',
     'show_logout_button',
     'show_user_info',
-    'handle_login',
-    'show_password_reset_completion'
+    'handle_login'
 ]

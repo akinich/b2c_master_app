@@ -3,6 +3,11 @@ Session management with hybrid permission system
 Compatible with existing login.py implementation
 
 VERSION HISTORY:
+1.3.0 - Simplified to match farm-2-app pattern - 11/15/25
+      CHANGES:
+      - Renamed reset_password() to send_password_reset_email() for clarity
+      - Kept complete_password_reset() for token-based password update
+      - Matches farm-2-app's proven password reset pattern
 1.2.0 - Added password reset completion - 11/15/25
       ADDITIONS:
       - Added complete_password_reset() method for updating password with token
@@ -124,7 +129,7 @@ class SessionManager:
                 return False, f"Login failed: {error_message}"
 
     @staticmethod
-    def reset_password(email: str) -> Tuple[bool, str]:
+    def send_password_reset_email(email: str) -> Tuple[bool, str]:
         """
         Send password reset email to user
 

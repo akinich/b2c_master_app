@@ -3,6 +3,11 @@ Main application entry point
 Multi-App Dashboard with Authentication and Role-Based Access
 
 VERSION HISTORY:
+1.3.0 - Simplified password reset to match farm-2-app - 11/15/25
+      CHANGES:
+      - Removed special app.py routing for password reset
+      - Login page now handles all password reset flows
+      - Simplified to match farm-2-app's proven pattern
 1.2.0 - Added password reset completion handler - 11/15/25
       ADDITIONS:
       - Added query parameter detection for password reset flow
@@ -19,7 +24,6 @@ KEY FUNCTIONS:
 - Dynamic module loading with require_access checks
 - Sidebar navigation with admin panel
 - User authentication and session management
-- Password reset flow handling
 - Breadcrumb navigation
 """
 import streamlit as st
@@ -28,8 +32,7 @@ from auth import (
     SessionManager,
     show_login_page,
     show_logout_button,
-    show_user_info,
-    show_password_reset_completion
+    show_user_info
 )
 from components.sidebar import show_sidebar, show_module_breadcrumb
 from components.dashboard import show_dashboard
@@ -129,16 +132,10 @@ def load_module(module_key: str):
 def main():
     """Main application logic"""
 
-    # Check if this is a password reset completion flow (from email link)
-    query_params = st.query_params
-    if query_params.get('reset_password') == 'true' and query_params.get('access_token'):
-        # Show password reset completion page
-        show_password_reset_completion()
-        return
-
     # Check if user is authenticated
+    # Note: login page handles password reset flow internally via extract_recovery_token()
     if not SessionManager.is_logged_in():
-        # Show login page
+        # Show login page (which handles both login and password reset)
         show_login_page()
         return
 

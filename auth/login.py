@@ -2,6 +2,13 @@
 Login page and authentication UI
 
 VERSION HISTORY:
+1.3.0 - Simplified password reset to match farm-2-app pattern - 11/15/25
+      CHANGES:
+      - Simplified to farm-2-app's proven pattern
+      - Added extract_recovery_token() for query param detection
+      - Added show_password_reset_form() for token-based reset
+      - Removed separate show_password_reset_completion() page
+      - Login page now handles both login and reset flows
 1.2.0 - Added password reset completion handler - 11/15/25
       ADDITIONS:
       - Added show_password_reset_completion() for handling reset tokens
@@ -22,8 +29,7 @@ VERSION HISTORY:
 1.0.0 - Login page with Supabase authentication - 11/11/25
 KEY FUNCTIONS:
 - Email/password login form
-- Password reset functionality
-- Password reset completion (new password entry)
+- Password reset functionality (request & complete)
 - Integration with SessionManager for auth
 - Logout button for sidebar
 - User info display (name, email, role)
@@ -36,6 +42,9 @@ from utils.rate_limiter import LoginRateLimiter
 def show_login_page():
     """Display login page with login and password reset options"""
 
+    # Check for password recovery tokens in URL (from email link)
+    recovery_token = extract_recovery_token()
+
     # Initialize session state for password reset toggle
     if 'show_reset_form' not in st.session_state:
         st.session_state.show_reset_form = False
@@ -44,12 +53,17 @@ def show_login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        st.markdown("# 🔐 Login")
-        st.markdown("---")
+        # If there's a recovery token, show password reset form
+        if recovery_token:
+            show_password_reset_form(recovery_token)
+        # If user clicked forgot password, show email input
+        elif st.session_state.show_reset_form:
+            show_forgot_password_form()
+        else:
+            # Show normal login form
+            st.markdown("# 🔐 Login")
+            st.markdown("---")
 
-        # Show either login form or password reset form
-        if not st.session_state.show_reset_form:
-            # Login Form
             with st.form("login_form"):
                 email = st.text_input("Email", placeholder="your.email@company.com")
                 password = st.text_input("Password", type="password")
@@ -67,26 +81,70 @@ def show_login_page():
                 st.session_state.show_reset_form = True
                 st.rerun()
 
-        else:
-            # Password Reset Form
-            st.markdown("### 🔑 Reset Password")
-            st.info("Enter your email address and we'll send you a link to reset your password.")
 
-            with st.form("reset_form"):
-                reset_email = st.text_input("Email", placeholder="your.email@company.com")
-                submit_reset = st.form_submit_button("Send Reset Link", width='stretch', type="primary")
+def show_forgot_password_form():
+    """Display forgot password form for requesting reset email"""
+    st.markdown("# 🔑 Forgot Password")
+    st.markdown("---")
+    st.info("Enter your email address and we'll send you a password reset link")
 
-                if submit_reset:
-                    if not reset_email:
-                        st.error("Please enter your email address")
-                    else:
-                        handle_password_reset(reset_email)
+    with st.form("forgot_password_form"):
+        reset_email = st.text_input("Email", placeholder="your.email@company.com")
+        submit_reset = st.form_submit_button("Send Reset Link", width='stretch', type="primary")
 
-            # Back to Login Link
-            st.markdown("---")
-            if st.button("← Back to Login", use_container_width=True):
-                st.session_state.show_reset_form = False
-                st.rerun()
+        if submit_reset:
+            if not reset_email:
+                st.error("Please enter your email address")
+            else:
+                handle_forgot_password(reset_email)
+
+    # Back to Login Link
+    st.markdown("---")
+    if st.button("← Back to Login", use_container_width=True):
+        st.session_state.show_reset_form = False
+        st.rerun()
+
+
+def extract_recovery_token():
+    """Extract recovery token from URL query params"""
+
+    # Check if we already extracted the token in session state
+    if 'recovery_token' in st.session_state and st.session_state.recovery_token:
+        return st.session_state.recovery_token
+
+    # Check if token is in query params (from redirect.html)
+    query_params = st.query_params
+    if 'access_token' in query_params and query_params.get('type') == 'recovery':
+        token = query_params['access_token']
+        # Store in session state
+        st.session_state.recovery_token = token
+        return token
+
+    return None
+
+
+def show_password_reset_form(recovery_token: str):
+    """Display password reset form for entering new password"""
+    st.markdown("# 🔐 Reset Your Password")
+    st.markdown("---")
+    st.info("Please enter your new password below")
+
+    with st.form("password_reset_form"):
+        new_password = st.text_input("New Password", type="password",
+                                     help="Minimum 8 characters", placeholder="Enter new password")
+        confirm_password = st.text_input("Confirm New Password", type="password",
+                                        placeholder="Confirm new password")
+        submit = st.form_submit_button("Reset Password", width='stretch', type="primary")
+
+        if submit:
+            if not new_password or not confirm_password:
+                st.error("Please fill in both password fields")
+            elif len(new_password) < 8:
+                st.error("Password must be at least 8 characters long")
+            elif new_password != confirm_password:
+                st.error("Passwords do not match")
+            else:
+                handle_complete_password_reset(recovery_token, new_password)
 
 
 def handle_login(email: str, password: str):
@@ -132,9 +190,9 @@ def handle_login(email: str, password: str):
                 st.error(f"❌ {lockout_message}")
 
 
-def handle_password_reset(email: str):
+def handle_forgot_password(email: str):
     """
-    Handle password reset request
+    Handle forgot password request - sends reset email
 
     Args:
         email: User's email address
@@ -142,11 +200,44 @@ def handle_password_reset(email: str):
     Sends a password reset email via Supabase Auth
     """
     with st.spinner("Sending reset link..."):
-        success, message = SessionManager.reset_password(email)
+        success, message = SessionManager.send_password_reset_email(email)
 
         if success:
             st.success(f"✅ {message}")
             st.info("💡 Check your spam folder if you don't see the email in a few minutes.")
+        else:
+            st.error(f"❌ {message}")
+
+
+def handle_complete_password_reset(recovery_token: str, new_password: str):
+    """
+    Handle password reset completion with recovery token
+
+    Args:
+        recovery_token: Recovery token from password reset email
+        new_password: New password to set
+
+    Uses the recovery token to update the user's password
+    """
+    import time
+
+    with st.spinner("Resetting password..."):
+        success, message = SessionManager.complete_password_reset(recovery_token, new_password)
+
+        if success:
+            st.success("✅ Password reset successful! You can now login with your new password.")
+            st.info("Redirecting to login page...")
+
+            # Clear recovery token from session state
+            if 'recovery_token' in st.session_state:
+                del st.session_state['recovery_token']
+
+            # Clear query parameters
+            st.query_params.clear()
+
+            # Wait a moment then redirect
+            time.sleep(2)
+            st.rerun()
         else:
             st.error(f"❌ {message}")
 
@@ -170,69 +261,3 @@ def show_user_info():
         st.sidebar.write(f"**Email:** {user.get('email')}")
         st.sidebar.write(f"**Role:** {profile.get('role_name', 'N/A')}")
         st.sidebar.markdown("---")
-
-
-def show_password_reset_completion():
-    """
-    Display password reset completion page for users who clicked the reset link
-
-    This page is shown when users return to the app after clicking the password
-    reset link in their email. They can enter their new password here.
-    """
-    # Center the form
-    col1, col2, col3 = st.columns([1, 2, 1])
-
-    with col2:
-        st.markdown("# 🔐 Set New Password")
-        st.markdown("---")
-        st.info("Please enter your new password below.")
-
-        with st.form("new_password_form"):
-            new_password = st.text_input("New Password", type="password", placeholder="Enter new password")
-            confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm new password")
-            submit = st.form_submit_button("Update Password", width='stretch', type="primary")
-
-            if submit:
-                if not new_password or not confirm_password:
-                    st.error("Please enter both password fields")
-                elif new_password != confirm_password:
-                    st.error("Passwords do not match")
-                elif len(new_password) < 8:
-                    st.error("Password must be at least 8 characters long")
-                else:
-                    handle_password_update(new_password)
-
-
-def handle_password_update(new_password: str):
-    """
-    Handle password update after reset
-
-    Args:
-        new_password: The new password to set
-
-    Uses the access_token from query parameters to update the user's password
-    """
-    # Get access token from query parameters
-    query_params = st.query_params
-    access_token = query_params.get('access_token')
-
-    if not access_token:
-        st.error("❌ Invalid or expired reset link. Please request a new password reset.")
-        return
-
-    with st.spinner("Updating password..."):
-        success, message = SessionManager.complete_password_reset(access_token, new_password)
-
-        if success:
-            st.success(f"✅ {message}")
-            st.info("🔑 You can now log in with your new password.")
-
-            # Clear query parameters
-            st.query_params.clear()
-
-            # Wait a moment then redirect to login
-            import time
-            time.sleep(2)
-            st.rerun()
-        else:
-            st.error(f"❌ {message}")
