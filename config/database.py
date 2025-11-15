@@ -3,6 +3,11 @@ Database configuration and connection utilities for Supabase
 UPDATED WITH FIXED USER MANAGEMENT (Create, Edit, Delete)
 
 VERSION HISTORY:
+1.2.3 - Security enhancement: Error message sanitization - 11/12/25
+      SECURITY IMPROVEMENTS:
+      - Sanitized all error messages (no technical details exposed to users)
+      - Added server-side logging with exc_info for debugging
+      - Generic user-facing error messages across all database operations
 1.2.2 - Performance optimization with caching - 11/12/25
       PERFORMANCE IMPROVEMENTS:
       - Added @st.cache_data(ttl=600) to get_all_users() (10min cache)
@@ -45,7 +50,11 @@ from typing import Optional, Dict, List, Any
 import json
 import secrets
 import string
+import logging
 from datetime import datetime, timedelta
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -62,7 +71,8 @@ class Database:
                 key = st.secrets["supabase"]["service_role_key"]
                 cls._instance = create_client(url, key)
             except Exception as e:
-                st.error(f"Failed to connect to database: {str(e)}")
+                st.error("Database connection failed. Please contact support.")
+                logger.error(f"Failed to connect to database: {str(e)}", exc_info=True)
                 st.stop()
         return cls._instance
     
@@ -87,7 +97,8 @@ class UserDB:
             response = db.table('user_details').select('*').eq('id', user_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
-            st.error(f"Error fetching user profile: {str(e)}")
+            st.error("Unable to load user profile. Please try again.")
+            logger.error(f"Error fetching user profile for {user_id}: {str(e)}", exc_info=True)
             return None
     
     @staticmethod
@@ -103,7 +114,8 @@ class UserDB:
                        .execute())
             return response.data if response.data else []
         except Exception as e:
-            st.error(f"Error fetching user modules: {str(e)}")
+            st.error("Unable to load modules. Please try again.")
+            logger.error(f"Error fetching modules for user {user_id}: {str(e)}", exc_info=True)
             return []
     
     @staticmethod
