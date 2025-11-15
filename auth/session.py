@@ -3,6 +3,16 @@ Session management with hybrid permission system
 Compatible with existing login.py implementation
 
 VERSION HISTORY:
+1.3.0 - Simplified to match farm-2-app pattern - 11/15/25
+      CHANGES:
+      - Renamed reset_password() to send_password_reset_email() for clarity
+      - Kept complete_password_reset() for token-based password update
+      - Matches farm-2-app's proven password reset pattern
+1.2.0 - Added password reset completion - 11/15/25
+      ADDITIONS:
+      - Added complete_password_reset() method for updating password with token
+      - Handles access_token from password reset email link
+      - Validates and updates user password securely
 1.1.0 - Added password reset functionality - 11/15/25
       ADDITIONS:
       - Added reset_password() method for sending password reset emails
@@ -11,7 +21,7 @@ VERSION HISTORY:
 1.0.0 - Hybrid permission system with role-based and user-specific access - 11/11/25
 KEY FUNCTIONS:
 - Supabase Auth integration (sign in/sign out)
-- Password reset functionality
+- Password reset functionality (request & complete)
 - Hybrid permissions (Admin: all modules, User: custom access)
 - Module access validation (has_module_access, require_module_access)
 - Role checks (is_admin, is_manager)
@@ -119,7 +129,7 @@ class SessionManager:
                 return False, f"Login failed: {error_message}"
 
     @staticmethod
-    def reset_password(email: str) -> Tuple[bool, str]:
+    def send_password_reset_email(email: str) -> Tuple[bool, str]:
         """
         Send password reset email to user
 
@@ -153,6 +163,53 @@ class SessionManager:
             # Don't reveal if email exists for security
             # Return success message regardless to prevent email enumeration
             return True, "If an account exists with this email, you will receive a password reset link."
+
+    @staticmethod
+    def complete_password_reset(access_token: str, new_password: str) -> Tuple[bool, str]:
+        """
+        Complete password reset by updating the user's password
+
+        Args:
+            access_token: Access token from password reset email link
+            new_password: New password to set
+
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        try:
+            # Get Supabase client
+            supabase = Database.get_client()
+
+            # Set the session with the access token
+            supabase.auth.set_session(access_token, access_token)
+
+            # Update the user's password
+            response = supabase.auth.update_user({
+                "password": new_password
+            })
+
+            if response.user:
+                # Log password reset completion
+                ActivityLogger.log(
+                    user_id=response.user.id,
+                    action_type='password_reset_complete',
+                    module_key='auth',
+                    description=f"Password reset completed for {response.user.email}",
+                    metadata={'email': response.user.email}
+                )
+
+                return True, "Password updated successfully!"
+            else:
+                return False, "Failed to update password. Please try again."
+
+        except Exception as e:
+            error_message = str(e)
+
+            # Handle specific errors
+            if "Invalid" in error_message or "expired" in error_message.lower():
+                return False, "Password reset link has expired. Please request a new one."
+            else:
+                return False, "Failed to update password. Please try again or contact support."
 
     @staticmethod
     def _load_accessible_modules(user_id: str, profile: Dict) -> List[Dict]:

@@ -65,7 +65,10 @@
                 const queryParams = hash.substring(1);
 
                 // Build the new URL
-                const baseUrl = 'https://b2cmaster.streamlit.app/';
+                // ⚠️ IMPORTANT: Update this URL to match YOUR Streamlit app URL
+                // For Streamlit Cloud: https://your-app-name--your-username.streamlit.app/
+                // For local development: http://localhost:8501/
+                const baseUrl = 'https://YOUR_APP_URL_HERE.streamlit.app/';
                 const newUrl = baseUrl + '?' + queryParams;
 
                 // Update manual link
@@ -75,7 +78,7 @@
                 window.location.replace(newUrl);
             } else {
                 // No hash found, just go to the app
-                window.location.replace('https://b2cmaster.streamlit.app/');
+                window.location.replace('https://YOUR_APP_URL_HERE.streamlit.app/');
             }
         })();
     </script>

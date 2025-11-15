@@ -1,0 +1,7 @@
+[server]
+# Enable static file serving
+enableStaticServing = true
+
+[browser]
+# Gather usage stats
+gatherUsageStats = false
