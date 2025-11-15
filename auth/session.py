@@ -3,9 +3,15 @@ Session management with hybrid permission system
 Compatible with existing login.py implementation
 
 VERSION HISTORY:
+1.1.0 - Added password reset functionality - 11/15/25
+      ADDITIONS:
+      - Added reset_password() method for sending password reset emails
+      - Integration with Supabase Auth password reset
+      - Logging for password reset requests
 1.0.0 - Hybrid permission system with role-based and user-specific access - 11/11/25
 KEY FUNCTIONS:
 - Supabase Auth integration (sign in/sign out)
+- Password reset functionality
 - Hybrid permissions (Admin: all modules, User: custom access)
 - Module access validation (has_module_access, require_module_access)
 - Role checks (is_admin, is_manager)
@@ -101,7 +107,7 @@ class SessionManager:
             
         except Exception as e:
             error_message = str(e)
-            
+
             # Handle specific Supabase auth errors
             if "Invalid login credentials" in error_message:
                 return False, "Invalid email or password"
@@ -111,7 +117,43 @@ class SessionManager:
                 return False, "No account found with this email"
             else:
                 return False, f"Login failed: {error_message}"
-    
+
+    @staticmethod
+    def reset_password(email: str) -> Tuple[bool, str]:
+        """
+        Send password reset email to user
+
+        Args:
+            email: User's email address
+
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        try:
+            # Get Supabase client
+            supabase = Database.get_client()
+
+            # Send password reset email
+            supabase.auth.reset_password_email(email)
+
+            # Log password reset request
+            ActivityLogger.log(
+                user_id=None,  # No user ID since not authenticated
+                action_type='password_reset_request',
+                module_key='auth',
+                description=f"Password reset requested for {email}",
+                metadata={'email': email}
+            )
+
+            return True, "Password reset email sent! Please check your inbox."
+
+        except Exception as e:
+            error_message = str(e)
+
+            # Don't reveal if email exists for security
+            # Return success message regardless to prevent email enumeration
+            return True, "If an account exists with this email, you will receive a password reset link."
+
     @staticmethod
     def _load_accessible_modules(user_id: str, profile: Dict) -> List[Dict]:
         """
