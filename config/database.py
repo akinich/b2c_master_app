@@ -225,23 +225,76 @@ class UserDB:
                     users = []
 
                     # Batch fetch all users from auth at once (more efficient than individual fetches)
+                    auth_users = {}
                     try:
                         # Get all auth users in one call
-                        auth_users_response = db.auth.admin.list_users()
-                        # Create a dictionary mapping user_id to email
-                        auth_users = {}
-                        if hasattr(auth_users_response, '__iter__'):
-                            for user in auth_users_response:
+                        logger.info("Attempting to fetch auth users via admin.list_users()")
+
+                        # DEBUG: Check if admin API is available
+                        if not hasattr(db.auth, 'admin'):
+                            logger.error("db.auth has no 'admin' attribute!")
+                            st.warning("⚠️ Admin API not available - emails will show as Unknown")
+                            raise AttributeError("Admin API not available")
+
+                        auth_response = db.auth.admin.list_users()
+
+                        # DEBUG: Log the response type and structure
+                        logger.info(f"Auth response type: {type(auth_response)}")
+                        logger.info(f"Auth response attributes: {dir(auth_response)}")
+
+                        # Try to convert to dict/JSON for logging
+                        try:
+                            if hasattr(auth_response, '__dict__'):
+                                logger.info(f"Auth response __dict__: {auth_response.__dict__}")
+                        except:
+                            pass
+
+                        # Handle different response formats
+                        if hasattr(auth_response, 'users'):
+                            # Response has a .users property
+                            logger.info(f"Response has .users property, type: {type(auth_response.users)}")
+                            for user in auth_response.users:
+                                logger.info(f"Processing user: id={getattr(user, 'id', 'NO_ID')}, email={getattr(user, 'email', 'NO_EMAIL')}")
+                                auth_users[user.id] = user.email
+                        elif hasattr(auth_response, '__iter__'):
+                            # Response is directly iterable
+                            logger.info("Response is directly iterable")
+                            for user in auth_response:
                                 if hasattr(user, 'id') and hasattr(user, 'email'):
+                                    logger.info(f"Processing user: id={user.id}, email={user.email}")
                                     auth_users[user.id] = user.email
+                        else:
+                            logger.warning("Response format not recognized - cannot extract users")
+
+                        logger.info(f"Successfully batch-fetched {len(auth_users)} auth users: {list(auth_users.keys())}")
                     except Exception as auth_error:
-                        logger.error(f"Error batch-fetching auth users: {str(auth_error)}")
+                        logger.error(f"Error batch-fetching auth users: {str(auth_error)}", exc_info=True)
+                        # Fallback to individual fetches
                         auth_users = {}
 
                     for profile in response.data:
                         user_id = profile['id']
-                        # Get email from batch-fetched auth users
-                        email = auth_users.get(user_id, 'Unknown')
+
+                        # Try to get email from batch-fetched auth users
+                        email = auth_users.get(user_id)
+
+                        # If not in batch, try individual fetch as last resort
+                        if not email:
+                            try:
+                                logger.info(f"Attempting individual fetch for user {user_id}")
+                                user_response = db.auth.admin.get_user_by_id(user_id)
+                                logger.info(f"Individual fetch response type: {type(user_response)}")
+                                logger.info(f"Individual fetch response attributes: {dir(user_response)}")
+
+                                if hasattr(user_response, 'user') and user_response.user:
+                                    email = user_response.user.email
+                                    logger.info(f"Successfully fetched email for {user_id}: {email}")
+                                else:
+                                    logger.warning(f"User response has no .user attribute for {user_id}")
+                                    email = 'Unknown'
+                            except Exception as e:
+                                logger.error(f"Could not fetch email for user {user_id}: {str(e)}", exc_info=True)
+                                email = 'Unknown'
 
                         users.append({
                             'id': user_id,
@@ -290,6 +343,7 @@ class UserDB:
 
             # Create user via Auth API
             try:
+                logger.info(f"Attempting to create user via admin.create_user() for email: {email}")
                 auth_response = db.auth.admin.create_user({
                     "email": email,
                     "password": temp_password,
@@ -298,9 +352,12 @@ class UserDB:
                         "full_name": full_name
                     }
                 })
+                logger.info(f"Create user response type: {type(auth_response)}")
+                logger.info(f"Create user response attributes: {dir(auth_response)}")
             except Exception as auth_error:
                 error_msg = str(auth_error)
                 error_msg_lower = error_msg.lower()
+                logger.error(f"Auth error creating user {email}: {error_msg}", exc_info=True)
 
                 # Check for specific errors
                 if "already registered" in error_msg_lower or "already exists" in error_msg_lower:
